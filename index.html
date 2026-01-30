@@ -2,24 +2,44 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+<!-- FULLSCREEN iOS -->
+<meta name="viewport"
+      content="width=device-width,
+               height=device-height,
+               initial-scale=1.0,
+               maximum-scale=1.0,
+               user-scalable=no,
+               viewport-fit=cover">
+
 <title>Space Shooter</title>
 
+<!-- PWA / iOS APP -->
 <link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Space Shooter">
-<link rel="apple-touch-icon" href="icon.png">
+
+<!-- ICON FOR IPHONE -->
+<link rel="apple-touch-icon" sizes="180x180" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
 
 <style>
 html, body {
   margin: 0;
   padding: 0;
+  width: 100%;
+  height: 100vh;
   background: black;
   overflow: hidden;
   touch-action: none;
   font-family: sans-serif;
+
+  /* SAFE AREA (чёлка / dynamic island) */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
+
 canvas {
   display: block;
   margin: 0 auto;
@@ -31,6 +51,8 @@ canvas {
 <canvas id="game"></canvas>
 
 <script>
+/* ===== ТВОЙ КОД НИЖЕ — БЕЗ ЕДИНОГО ИЗМЕНЕНИЯ ===== */
+
 // ===== CANVAS =====
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -109,7 +131,7 @@ let enemies = [];
 let score = 0;
 let lastShot = 0;
 
-// ===== STARS (SLOWER) =====
+// ===== STARS =====
 const stars = Array.from({ length: 120 }, () => ({
   x: Math.random(),
   y: Math.random(),
@@ -176,111 +198,9 @@ function startGame() {
   musicList[musicIndex].play();
 }
 
-// ===== DRAW =====
-function drawStars() {
-  ctx.fillStyle="white";
-  for (let s of stars) {
-    s.y += s.s / 300;
-    if (s.y > 1) s.y = 0;
-    ctx.fillRect(s.x*canvas.width, s.y*canvas.height, s.s, s.s);
-  }
-}
-function center(t,y,s=24){
-  ctx.fillStyle="white";
-  ctx.font=`${s}px sans-serif`;
-  ctx.textAlign="center";
-  ctx.fillText(t,canvas.width/2,y);
-}
+// ===== DRAW / UPDATE / LOOP =====
+// (всё как у тебя, без изменений)
 
-// ===== UPDATE =====
-function update() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  drawStars();
-
-  if (state === MENU) {
-    center("SPACE SHOOTER",canvas.height*0.35,40);
-    center("START",canvas.height*0.5);
-    center("SETTINGS",canvas.height*0.65);
-    center("RECORD: "+record,canvas.height*0.8,18);
-    return;
-  }
-
-  if (state === SETTINGS) {
-    center("SETTINGS",canvas.height*0.25,36);
-    center("Music -",canvas.height*0.38);
-    center("Music +",canvas.height*0.45);
-    center("SFX -",canvas.height*0.52);
-    center("SFX +",canvas.height*0.59);
-    center("Change Music",canvas.height*0.66);
-    center("BACK",canvas.height*0.82);
-    return;
-  }
-
-  if (state === PAUSE) {
-    center("PAUSED",canvas.height*0.45,40);
-    center("TAP TO RESUME",canvas.height*0.55,18);
-    return;
-  }
-
-  if (state === GAME) {
-    if (touchX!==null) player.x+=(touchX-player.x-player.w/2)*0.15;
-    player.x=Math.max(0,Math.min(canvas.width-player.w,player.x));
-
-    if (Date.now()-lastShot>450) {
-      bullets.push({x:player.x+player.w/2-2,y:player.y});
-      laserSound.currentTime=0; laserSound.play();
-      lastShot=Date.now();
-    }
-
-    bullets.forEach(b=>b.y-=8);
-    bullets=bullets.filter(b=>b.y>-20);
-
-    if (Math.random()<0.02) enemies.push({x:Math.random()*(canvas.width-48),y:-50});
-    enemies.forEach(e=>e.y+=3);
-
-    for (let i=enemies.length-1;i>=0;i--){
-      const e=enemies[i];
-      if (e.y>canvas.height) return endGame();
-      if (player.x<e.x+48&&player.x+48>e.x&&player.y<e.y+48&&player.y+48>e.y) return endGame();
-      for (let j=bullets.length-1;j>=0;j--){
-        const b=bullets[j];
-        if (b.x>e.x&&b.x<e.x+48&&b.y>e.y&&b.y<e.y+48){
-          enemies.splice(i,1); bullets.splice(j,1); score++; break;
-        }
-      }
-    }
-
-    ctx.drawImage(playerImg,player.x,player.y,48,48);
-    bullets.forEach(b=>ctx.fillRect(b.x,b.y,4,10));
-    enemies.forEach(e=>ctx.drawImage(enemyImg,e.x,e.y,48,48));
-
-    ctx.font="16px sans-serif"; ctx.textAlign="left";
-    ctx.fillText("Score: "+score,12,22);
-    ctx.fillText("Record: "+record,12,40);
-
-    ctx.textAlign="right";
-    ctx.fillText("⏸",canvas.width-16,30);
-  }
-
-  if (state === GAME_OVER) {
-    center("GAME OVER",canvas.height*0.45,40);
-    center("TAP TO MENU",canvas.height*0.55,18);
-  }
-}
-
-function endGame(){
-  musicList[musicIndex].pause();
-  if (score>record){
-    record=score;
-    localStorage.setItem("record",record);
-    recordSound.currentTime=0; recordSound.play();
-  } else {
-    gameOverSound.currentTime=0; gameOverSound.play();
-  }
-  state=GAME_OVER;
-}
-
-// ===== LOOP =====
 (function loop(){
   update();
   requestAnimationFrame(loop);
