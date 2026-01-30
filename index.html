@@ -16,7 +16,6 @@ html, body {
   user-select: none;
   -webkit-user-select: none;
 }
-
 canvas {
   display: block;
   margin: 0 auto;
@@ -50,23 +49,30 @@ resize();
 // ================= STATES =================
 const MENU = 0;
 const GAME = 1;
-const GAME_OVER = 2;
 let state = MENU;
 
-// ================= IMAGES =================
+// ================= ASSETS =================
 const playerImg = new Image();
 playerImg.src = "player.png";
 
 const enemyImg = new Image();
 enemyImg.src = "enemy.png";
 
+const laserSound = new Audio("laser.wav");
+const gameOverSound = new Audio("gameover.wav");
+const music = new Audio("music1.mp3");
+music.loop = true;
+music.volume = 0.3;
+
+// ================= STORAGE =================
+let record = Number(localStorage.getItem("record")) || 0;
+
 // ================= PLAYER =================
 const player = {
   x: 0,
   y: 0,
   w: 48,
-  h: 48,
-  speed: 6
+  h: 48
 };
 
 // ================= GAME =================
@@ -84,11 +90,12 @@ const stars = Array.from({ length: 120 }, () => ({
 
 // ================= INPUT =================
 let touchX = null;
+let moveDir = 0;
 
 canvas.addEventListener("touchstart", e => {
   e.preventDefault();
   touchX = e.touches[0].clientX;
-  if (state !== GAME) startGame();
+  if (state === MENU) startGame();
 });
 
 canvas.addEventListener("touchmove", e => {
@@ -99,12 +106,16 @@ canvas.addEventListener("touchmove", e => {
 canvas.addEventListener("touchend", () => touchX = null);
 
 window.addEventListener("keydown", e => {
-  if ((e.key === "r" || e.key === "R") && state !== GAME) {
-    startGame();
+  if (e.key === "r" || e.key === "R") {
+    if (state === MENU) startGame();
   }
+  if (e.key === "ArrowLeft" || e.key === "a") moveDir = -1;
+  if (e.key === "ArrowRight" || e.key === "d") moveDir = 1;
 });
 
-// ================= START =================
+window.addEventListener("keyup", () => moveDir = 0);
+
+// ================= START GAME =================
 function startGame() {
   player.x = canvas.width / 2 - player.w / 2;
   player.y = canvas.height - player.h - 20;
@@ -113,6 +124,9 @@ function startGame() {
   score = 0;
   lastShot = 0;
   state = GAME;
+
+  music.currentTime = 0;
+  music.play();
 }
 
 // ================= DRAW =================
@@ -125,7 +139,7 @@ function drawStars() {
   }
 }
 
-function drawCentered(text, y, size = 32) {
+function drawCenter(text, y, size) {
   ctx.fillStyle = "white";
   ctx.font = `${size}px sans-serif`;
   ctx.textAlign = "center";
@@ -138,74 +152,81 @@ function update() {
   drawStars();
 
   if (state === MENU) {
-    drawCentered("SPACE SHOOTER", canvas.height / 2 - 40, 42);
-    drawCentered("Press R or TAP to Start", canvas.height / 2 + 20, 18);
+    drawCenter("SPACE SHOOTER", canvas.height / 2 - 40, 42);
+    drawCenter("Press R or TAP to Start", canvas.height / 2 + 20, 18);
+    drawCenter("Record: " + record, canvas.height / 2 + 50, 16);
     return;
   }
 
-  if (state === GAME) {
-    if (touchX !== null) {
-      player.x += (touchX - player.x - player.w / 2) * 0.15;
-    }
+  // ===== MOVE =====
+  if (touchX !== null) {
+    player.x += (touchX - player.x - player.w / 2) * 0.15;
+  } else {
+    player.x += moveDir * 6;
+  }
+  player.x = Math.max(0, Math.min(canvas.width - player.w, player.x));
 
-    player.x = Math.max(0, Math.min(canvas.width - player.w, player.x));
+  // ===== SHOOT =====
+  if (Date.now() - lastShot > 350) {
+    bullets.push({ x: player.x + player.w / 2 - 2, y: player.y });
+    laserSound.currentTime = 0;
+    laserSound.play();
+    lastShot = Date.now();
+  }
 
-    if (Date.now() - lastShot > 350) {
-      bullets.push({
-        x: player.x + player.w / 2 - 2,
-        y: player.y
-      });
-      lastShot = Date.now();
-    }
+  bullets.forEach(b => b.y -= 8);
+  bullets = bullets.filter(b => b.y > -20);
 
-    bullets.forEach(b => b.y -= 8);
-    bullets = bullets.filter(b => b.y > -20);
+  // ===== ENEMIES =====
+  if (Math.random() < 0.02) {
+    enemies.push({ x: Math.random() * (canvas.width - 48), y: -60 });
+  }
 
-    if (Math.random() < 0.02) {
-      enemies.push({
-        x: Math.random() * (canvas.width - 48),
-        y: -60
-      });
-    }
+  enemies.forEach(e => e.y += 3);
 
-    enemies.forEach(e => e.y += 3);
+  for (let e of enemies) {
+    if (e.y > canvas.height) endGame();
 
-    for (let e of enemies) {
-      if (e.y > canvas.height) state = GAME_OVER;
-
-      for (let b of bullets) {
-        if (
-          b.x > e.x &&
-          b.x < e.x + 48 &&
-          b.y > e.y &&
-          b.y < e.y + 48
-        ) {
-          e.y = canvas.height + 200;
-          b.y = -200;
-          score++;
-        }
+    for (let b of bullets) {
+      if (
+        b.x > e.x &&
+        b.x < e.x + 48 &&
+        b.y > e.y &&
+        b.y < e.y + 48
+      ) {
+        e.y = canvas.height + 200;
+        b.y = -200;
+        score++;
       }
     }
-
-    ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
-    bullets.forEach(b => {
-      ctx.fillStyle = "yellow";
-      ctx.fillRect(b.x, b.y, 4, 10);
-    });
-    enemies.forEach(e => {
-      ctx.drawImage(enemyImg, e.x, e.y, 48, 48);
-    });
-
-    ctx.fillStyle = "white";
-    ctx.font = "18px sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillText("Score: " + score, 10, 24);
   }
 
-  if (state === GAME_OVER) {
-    drawCentered("GAME OVER", canvas.height / 2 - 20, 42);
-    drawCentered("Press R or TAP", canvas.height / 2 + 30, 18);
+  // ===== DRAW OBJECTS =====
+  ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
+
+  ctx.fillStyle = "yellow";
+  bullets.forEach(b => ctx.fillRect(b.x, b.y, 4, 10));
+
+  enemies.forEach(e => ctx.drawImage(enemyImg, e.x, e.y, 48, 48));
+
+  ctx.fillStyle = "white";
+  ctx.font = "18px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("Score: " + score, 10, 24);
+  ctx.fillText("Record: " + record, 10, 44);
+}
+
+// ================= END GAME =================
+function endGame() {
+  music.pause();
+  gameOverSound.play();
+
+  if (score > record) {
+    record = score;
+    localStorage.setItem("record", record);
   }
+
+  state = MENU;
 }
 
 // ================= LOOP =================
