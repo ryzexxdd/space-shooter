@@ -192,7 +192,7 @@ function startGame() {
 function drawStars() {
   ctx.fillStyle="white";
   for (let s of stars) {
-    s.y += s.s / 300;
+    s.y += s.s / 600; // ⭐ МЕДЛЕННЕЕ ФОН
     if (s.y > 1) s.y = 0;
     ctx.fillRect(s.x*canvas.width, s.y*canvas.height, s.s, s.s);
   }
@@ -238,7 +238,7 @@ function update() {
     if (touchX!==null) player.x+=(touchX-player.x-player.w/2)*0.15;
     player.x=Math.max(0,Math.min(canvas.width-player.w,player.x));
 
-    if (Date.now()-lastShot>450) {
+    if (Date.now()-lastShot>650) { // 🔫 МЕДЛЕННЕЕ СТРЕЛЬБА
       bullets.push({x:player.x+player.w/2-2,y:player.y});
       laserSound.currentTime=0; laserSound.play();
       lastShot=Date.now();
@@ -301,8 +301,6 @@ function endGame(){
 </body>
 </html>
 
-</script>
-</body>
-</html>
+
 
 
