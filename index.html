@@ -1,25 +1,188 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Space Shooter</title>
-  <style>
-    body {
-      margin: 0;
-      background: black;
-      overflow: hidden;
-      touch-action: none;
-    }
-    canvas {
-      display: block;
-      margin: auto;
-      background: black;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+<title>Space Shooter</title>
+
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  background: black;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+canvas {
+  display: block;
+  margin: 0 auto;
+}
+</style>
 </head>
+
 <body>
-  <canvas id="game" width="360" height="640"></canvas>
-  <script src="game.js"></script>
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener("resize", resize);
+resize();
+
+// ===== СОСТОЯНИЯ =====
+const MENU = 0;
+const GAME = 1;
+const GAME_OVER = 2;
+let state = MENU;
+
+// ===== ИГРОК =====
+let player = {
+  x: 0,
+  y: 0,
+  w: 40,
+  h: 40,
+  speed: 6
+};
+
+// ===== ИГРА =====
+let bullets = [];
+let enemies = [];
+let score = 0;
+let lastShot = 0;
+
+// ===== ЗВЁЗДЫ =====
+let stars = Array.from({length: 100}, () => ({
+  x: Math.random(),
+  y: Math.random(),
+  s: Math.random() * 2 + 1
+}));
+
+// ===== УПРАВЛЕНИЕ =====
+let touchX = null;
+canvas.addEventListener("touchstart", e => {
+  e.preventDefault();
+  touchX = e.touches[0].clientX;
+  if (state === MENU) startGame();
+  if (state === GAME_OVER) state = MENU;
+});
+
+canvas.addEventListener("touchmove", e => {
+  e.preventDefault();
+  touchX = e.touches[0].clientX;
+});
+
+canvas.addEventListener("touchend", () => touchX = null);
+
+// ===== ЗАПУСК =====
+function startGame() {
+  player.x = canvas.width / 2 - player.w / 2;
+  player.y = canvas.height - 80;
+  bullets = [];
+  enemies = [];
+  score = 0;
+  state = GAME;
+}
+
+// ===== ОТРИСОВКА =====
+function drawStars() {
+  ctx.fillStyle = "white";
+  for (let s of stars) {
+    s.y += s.s / 100;
+    if (s.y > 1) s.y = 0;
+    ctx.fillRect(s.x * canvas.width, s.y * canvas.height, s.s, s.s);
+  }
+}
+
+function drawPlayer() {
+  ctx.fillStyle = "orange";
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+}
+
+function drawBullets() {
+  ctx.fillStyle = "yellow";
+  bullets.forEach(b => ctx.fillRect(b.x, b.y, 4, 10));
+}
+
+function drawEnemies() {
+  ctx.fillStyle = "red";
+  enemies.forEach(e => ctx.fillRect(e.x, e.y, 40, 30));
+}
+
+// ===== ЛОГИКА =====
+function update() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawStars();
+
+  if (state === MENU) {
+    ctx.fillStyle = "white";
+    ctx.font = "40px sans-serif";
+    ctx.fillText("SPACE SHOOTER", canvas.width/2 - 150, canvas.height/2 - 40);
+    ctx.font = "20px sans-serif";
+    ctx.fillText("Tap to Start", canvas.width/2 - 60, canvas.height/2 + 20);
+    return;
+  }
+
+  if (state === GAME) {
+    if (touchX !== null) {
+      player.x += (touchX - player.x - player.w/2) * 0.1;
+    }
+
+    if (Date.now() - lastShot > 300) {
+      bullets.push({x: player.x + player.w/2 - 2, y: player.y});
+      lastShot = Date.now();
+    }
+
+    bullets.forEach(b => b.y -= 8);
+    bullets = bullets.filter(b => b.y > 0);
+
+    if (Math.random() < 0.02) {
+      enemies.push({x: Math.random() * (canvas.width - 40), y: -30});
+    }
+
+    enemies.forEach(e => e.y += 3);
+
+    for (let e of enemies) {
+      if (e.y > canvas.height) state = GAME_OVER;
+      for (let b of bullets) {
+        if (b.x > e.x && b.x < e.x + 40 && b.y > e.y && b.y < e.y + 30) {
+          e.y = canvas.height + 100;
+          b.y = -100;
+          score++;
+        }
+      }
+    }
+
+    drawPlayer();
+    drawBullets();
+    drawEnemies();
+
+    ctx.fillStyle = "white";
+    ctx.font = "20px sans-serif";
+    ctx.fillText("Score: " + score, 10, 30);
+  }
+
+  if (state === GAME_OVER) {
+    ctx.fillStyle = "red";
+    ctx.font = "40px sans-serif";
+    ctx.fillText("GAME OVER", canvas.width/2 - 120, canvas.height/2);
+    ctx.font = "20px sans-serif";
+    ctx.fillText("Tap to Menu", canvas.width/2 - 60, canvas.height/2 + 40);
+  }
+}
+
+function loop() {
+  update();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
 </body>
 </html>
