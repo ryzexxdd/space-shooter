@@ -48,7 +48,8 @@ resize();
 const MENU = 0;
 const SETTINGS = 1;
 const GAME = 2;
-const GAME_OVER = 3;
+const PAUSE = 3;
+const GAME_OVER = 4;
 let state = MENU;
 
 // ===== ASSETS =====
@@ -108,16 +109,42 @@ let touchX = null;
 
 canvas.addEventListener("touchstart", e => {
   const rect = canvas.getBoundingClientRect();
+  const x = e.touches[0].clientX - rect.left;
   const y = e.touches[0].clientY - rect.top;
-  touchX = e.touches[0].clientX - rect.left;
+  touchX = x;
 
   if (state === MENU) {
     if (y > canvas.height * 0.45 && y < canvas.height * 0.55) startGame();
     else if (y > canvas.height * 0.6 && y < canvas.height * 0.7) state = SETTINGS;
   }
+
   else if (state === SETTINGS) {
-    if (y > canvas.height * 0.78) state = MENU;
+    if (y > canvas.height * 0.35 && y < canvas.height * 0.42) musicVolume = Math.max(0, musicVolume - 0.1);
+    else if (y > canvas.height * 0.42 && y < canvas.height * 0.49) musicVolume = Math.min(1, musicVolume + 0.1);
+    else if (y > canvas.height * 0.49 && y < canvas.height * 0.56) sfxVolume = Math.max(0, sfxVolume - 0.1);
+    else if (y > canvas.height * 0.56 && y < canvas.height * 0.63) sfxVolume = Math.min(1, sfxVolume + 0.1);
+    else if (y > canvas.height * 0.63 && y < canvas.height * 0.7) {
+      musicList.forEach(m => m.pause());
+      musicIndex = (musicIndex + 1) % musicList.length;
+      musicList[musicIndex].play();
+    }
+    else if (y > canvas.height * 0.78) state = MENU;
+
+    updateVolumes();
   }
+
+  else if (state === GAME) {
+    if (x > canvas.width * 0.8 && y < canvas.height * 0.1) {
+      state = PAUSE;
+      musicList[musicIndex].pause();
+    }
+  }
+
+  else if (state === PAUSE) {
+    state = GAME;
+    musicList[musicIndex].play();
+  }
+
   else if (state === GAME_OVER) {
     state = MENU;
   }
@@ -148,7 +175,7 @@ function startGame() {
 function drawStars() {
   ctx.fillStyle = "white";
   for (let s of stars) {
-    s.y += s.s / 120;
+    s.y += s.s / 300; // ⭐ медленнее
     if (s.y > 1) s.y = 0;
     ctx.fillRect(s.x * canvas.width, s.y * canvas.height, s.s, s.s);
   }
@@ -176,7 +203,18 @@ function update() {
 
   if (state === SETTINGS) {
     center("SETTINGS", canvas.height * 0.25, 36);
+    center("Music -", canvas.height * 0.38);
+    center("Music +", canvas.height * 0.45);
+    center("SFX -", canvas.height * 0.52);
+    center("SFX +", canvas.height * 0.59);
+    center("Change Music", canvas.height * 0.66);
     center("BACK", canvas.height * 0.82);
+    return;
+  }
+
+  if (state === PAUSE) {
+    center("PAUSE", canvas.height * 0.45, 40);
+    center("TAP TO RESUME", canvas.height * 0.55, 18);
     return;
   }
 
@@ -186,7 +224,7 @@ function update() {
     }
     player.x = Math.max(0, Math.min(canvas.width - player.w, player.x));
 
-    if (Date.now() - lastShot > 300) {
+    if (Date.now() - lastShot > 500) { // 🔫 медленнее
       bullets.push({ x: player.x + player.w / 2 - 2, y: player.y });
       laserSound.currentTime = 0;
       laserSound.play();
@@ -202,16 +240,11 @@ function update() {
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
 
-      if (e.y > canvas.height) {
-        endGame();
-        return;
-      }
-
-      if (
-        player.x < e.x + 48 &&
-        player.x + player.w > e.x &&
-        player.y < e.y + 48 &&
-        player.y + player.h > e.y
+      if (e.y > canvas.height ||
+        (player.x < e.x + 48 &&
+         player.x + player.w > e.x &&
+         player.y < e.y + 48 &&
+         player.y + player.h > e.y)
       ) {
         endGame();
         return;
@@ -232,11 +265,11 @@ function update() {
     bullets.forEach(b => ctx.fillRect(b.x, b.y, 4, 10));
     enemies.forEach(e => ctx.drawImage(enemyImg, e.x, e.y, 48, 48));
 
-    ctx.fillStyle = "white";
-    ctx.font = "16px sans-serif";
     ctx.textAlign = "left";
     ctx.fillText("Score: " + score, 12, 22);
     ctx.fillText("Record: " + record, 12, 40);
+    ctx.textAlign = "right";
+    ctx.fillText("PAUSE", canvas.width - 12, 22);
   }
 
   if (state === GAME_OVER) {
@@ -247,7 +280,6 @@ function update() {
 
 function endGame() {
   const isNewRecord = score > record;
-
   if (isNewRecord) {
     record = score;
     localStorage.setItem("record", record);
@@ -255,7 +287,6 @@ function endGame() {
   } else {
     gameOverSound.play();
   }
-
   state = GAME_OVER;
 }
 
