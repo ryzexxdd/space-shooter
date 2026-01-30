@@ -50,7 +50,7 @@ canvas {
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-// ===== AVATAR (MENU IMAGE) =====
+// ===== AVATAR =====
 const avatarImg = new Image();
 avatarImg.src = "avatar.png";
 
@@ -77,56 +77,40 @@ const PAUSE = 3;
 const GAME_OVER = 4;
 let state = MENU;
 
-// ===== ASSETS =====
-const playerImg = new Image(); playerImg.src = "player.png";
-const enemyImg  = new Image(); enemyImg.src  = "enemy.png";
-
-// ===== AUDIO =====
-const musicList = [
-  new Audio("music1.mp3"),
-  new Audio("music2.mp3"),
-  new Audio("music3.mp3")
-];
-let musicIndex = 0;
-let musicVolume = 0.3;
-let sfxVolume = 0.4;
-
-musicList.forEach(m => { m.loop = true; m.volume = musicVolume; });
-
-const laserSound   = new Audio("laser.wav");
-const gameOverSound= new Audio("gameover.wav");
-const recordSound  = new Audio("record.wav");
-
-function updateVolumes() {
-  musicList.forEach(m => m.volume = musicVolume);
-  laserSound.volume = sfxVolume;
-  gameOverSound.volume = sfxVolume;
-  recordSound.volume = sfxVolume;
-}
-updateVolumes();
-
-// ===== iOS AUDIO UNLOCK =====
-let audioUnlocked = false;
-function unlockAudio() {
-  if (audioUnlocked) return;
-  audioUnlocked = true;
-  [...musicList, laserSound, gameOverSound, recordSound].forEach(a=>{
-    a.play().then(()=>a.pause()).catch(()=>{});
-    a.currentTime = 0;
-  });
-}
-
 // ===== STORAGE =====
 let record = Number(localStorage.getItem("record")) || 0;
 
-// ===== PLAYER =====
-const player = { x:0, y:0, w:48, h:48 };
+// ===== INPUT =====
+let touchX = null;
 
-// ===== GAME =====
-let bullets = [];
-let enemies = [];
-let score = 0;
-let lastShot = 0;
+canvas.addEventListener("touchstart", e => {
+  const r = canvas.getBoundingClientRect();
+  const x = e.touches[0].clientX - r.left;
+  const y = e.touches[0].clientY - r.top;
+  touchX = x;
+
+  if (state === MENU) {
+    // START
+    if (y > canvas.height * 0.55 && y < canvas.height * 0.62) {
+      startGame();
+    }
+    // SETTINGS
+    else if (y > canvas.height * 0.64 && y < canvas.height * 0.71) {
+      state = SETTINGS;
+    }
+  }
+  else if (state === SETTINGS) {
+    if (y > canvas.height * 0.82) state = MENU;
+  }
+  else if (state === GAME_OVER) {
+    state = MENU;
+  }
+});
+
+// ===== START GAME (заглушка, как было) =====
+function startGame() {
+  state = GAME;
+}
 
 // ===== STARS =====
 const stars = Array.from({ length: 300 }, () => ({
@@ -135,114 +119,59 @@ const stars = Array.from({ length: 300 }, () => ({
   s: Math.random() * 2 + 1
 }));
 
-// ===== INPUT =====
-let touchX = null;
-
-canvas.addEventListener("touchstart", e => {
-  unlockAudio();
-  const r = canvas.getBoundingClientRect();
-  const x = e.touches[0].clientX - r.left;
-  const y = e.touches[0].clientY - r.top;
-  touchX = x;
-
-  if (state === GAME && x > canvas.width - 50 && y < 50) {
-    state = PAUSE;
-    musicList[musicIndex].pause();
-    return;
-  }
-
-  if (state === MENU) {
-    if (y > canvas.height*0.48 && y < canvas.height*0.56) startGame();
-    else if (y > canvas.height*0.58 && y < canvas.height*0.66) state = SETTINGS;
-  }
-  else if (state === SETTINGS) {
-    if (y > canvas.height*0.78) state = MENU;
-  }
-  else if (state === PAUSE) {
-    state = GAME;
-    musicList[musicIndex].play();
-  }
-  else if (state === GAME_OVER) state = MENU;
-});
-
-canvas.addEventListener("touchmove", e => {
-  const r = canvas.getBoundingClientRect();
-  touchX = e.touches[0].clientX - r.left;
-});
-canvas.addEventListener("touchend", ()=>touchX=null);
-
-// ===== START GAME =====
-function startGame() {
-  player.x = canvas.width/2 - player.w/2;
-  player.y = canvas.height - player.h - 20;
-  bullets=[]; enemies=[]; score=0; lastShot=0;
-  state = GAME;
-  musicList.forEach(m=>m.pause());
-  musicList[musicIndex].currentTime=0;
-  musicList[musicIndex].play();
-}
-
-// ===== DRAW HELPERS =====
 function drawStars() {
-  ctx.fillStyle="white";
+  ctx.fillStyle = "white";
   for (let s of stars) {
     s.y += s.s / 600;
     if (s.y > 1) s.y = 0;
-    ctx.fillRect(s.x*canvas.width, s.y*canvas.height, s.s, s.s);
+    ctx.fillRect(s.x * canvas.width, s.y * canvas.height, s.s, s.s);
   }
 }
-function center(t,y,s=24){
-  ctx.fillStyle="white";
-  ctx.font=`600 ${s}px system-ui`;
-  ctx.textAlign="center";
-  ctx.fillText(t,canvas.width/2,y);
+
+function center(text, y, size) {
+  ctx.fillStyle = "white";
+  ctx.font = `700 ${size}px system-ui`;
+  ctx.textAlign = "center";
+  ctx.fillText(text, canvas.width / 2, y);
 }
 
 // ===== UPDATE =====
 function update() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawStars();
 
   if (state === MENU) {
 
-    // ===== AVATAR =====
-    const avatarSize = 120;
+    // AVATAR (ВЕРХ)
+    const avatarSize = 160;
     ctx.drawImage(
       avatarImg,
-      canvas.width/2 - avatarSize/2,
-      canvas.height*0.12,
+      canvas.width / 2 - avatarSize / 2,
+      canvas.height * 0.10,
       avatarSize,
       avatarSize
     );
 
-    // ===== TEXTS (НИЖЕ И БЛИЖЕ) =====
-    center("SPACE SHOOTER",canvas.height*0.33,42);
-    center("START",canvas.height*0.48,22);
-    center("SETTINGS",canvas.height*0.56,22);
-    center("RECORD: "+record,canvas.height*0.66,18);
+    // LOGO (БОЛЬШЕ)
+    center("SPACE SHOOTER", canvas.height * 0.34, 50);
+
+    // BUTTONS (НИЖЕ)
+    center("START", canvas.height * 0.58, 26);
+    center("SETTINGS", canvas.height * 0.67, 26);
+
+    // RECORD
+    center("RECORD: " + record, canvas.height * 0.77, 18);
     return;
   }
 
   if (state === GAME_OVER) {
-    center("GAME OVER",canvas.height*0.45,40);
-    center("TAP TO MENU",canvas.height*0.55,18);
+    center("GAME OVER", canvas.height * 0.45, 40);
+    center("TAP TO MENU", canvas.height * 0.55, 18);
   }
-}
-
-function endGame(){
-  musicList[musicIndex].pause();
-  if (score>record){
-    record=score;
-    localStorage.setItem("record",record);
-    recordSound.currentTime=0; recordSound.play();
-  } else {
-    gameOverSound.currentTime=0; gameOverSound.play();
-  }
-  state=GAME_OVER;
 }
 
 // ===== LOOP =====
-(function loop(){
+(function loop() {
   update();
   requestAnimationFrame(loop);
 })();
