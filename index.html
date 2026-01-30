@@ -1,3 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Space Shooter</title>
+
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  background: black;
+  overflow: hidden;
+  touch-action: none;
+  font-family: sans-serif;
+}
+canvas {
+  display: block;
+  margin: 0 auto;
+}
+</style>
+</head>
+
+<body>
+<canvas id="game"></canvas>
+
 <script>
 // ===== CANVAS =====
 const canvas = document.getElementById("game");
@@ -209,8 +235,8 @@ function update() {
     ctx.fillStyle = "white";
     ctx.font = "16px sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText("Score: " + score, 10, 22);
-    ctx.fillText("Record: " + record, 10, 40);
+    ctx.fillText("Score: " + score, 12, 22);
+    ctx.fillText("Record: " + record, 12, 40);
   }
 
   if (state === GAME_OVER) {
@@ -220,7 +246,7 @@ function update() {
 }
 
 function endGame() {
-  let isNewRecord = score > record;
+  const isNewRecord = score > record;
 
   if (isNewRecord) {
     record = score;
@@ -240,3 +266,5 @@ function loop() {
 }
 loop();
 </script>
+</body>
+</html>
