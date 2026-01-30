@@ -12,6 +12,7 @@ html, body {
   background: black;
   overflow: hidden;
   touch-action: none;
+  font-family: sans-serif;
 }
 canvas {
   display: block;
@@ -50,7 +51,7 @@ const GAME = 2;
 const GAME_OVER = 3;
 let state = MENU;
 
-// ================= ASSETS =================
+// ================= IMAGES =================
 const playerImg = new Image();
 playerImg.src = "player.png";
 const enemyImg = new Image();
@@ -85,7 +86,13 @@ updateVolumes();
 let record = Number(localStorage.getItem("record")) || 0;
 
 // ================= PLAYER =================
-const player = { x: 0, y: 0, w: 48, h: 48 };
+const player = {
+  x: 0,
+  y: 0,
+  w: 48,
+  h: 48,
+  speed: 7
+};
 
 // ================= GAME =================
 let bullets = [];
@@ -102,32 +109,40 @@ const stars = Array.from({ length: 120 }, () => ({
 
 // ================= INPUT =================
 let touchX = null;
+let left = false;
+let right = false;
+
 canvas.addEventListener("touchstart", e => {
   const y = e.touches[0].clientY;
-  const x = e.touches[0].clientX;
-  touchX = x;
+  touchX = e.touches[0].clientX;
 
   if (state === MENU) {
     if (y > canvas.height * 0.45 && y < canvas.height * 0.55) startGame();
     if (y > canvas.height * 0.6 && y < canvas.height * 0.7) state = SETTINGS;
-  } else if (state === SETTINGS) {
-    if (y > canvas.height * 0.35 && y < canvas.height * 0.45) musicVolume = Math.max(0, musicVolume - 0.1);
-    if (y > canvas.height * 0.45 && y < canvas.height * 0.55) musicVolume = Math.min(1, musicVolume + 0.1);
-    if (y > canvas.height * 0.55 && y < canvas.height * 0.65) sfxVolume = Math.max(0, sfxVolume - 0.1);
-    if (y > canvas.height * 0.65 && y < canvas.height * 0.75) sfxVolume = Math.min(1, sfxVolume + 0.1);
-    if (y > canvas.height * 0.75) {
-      musicIndex = (musicIndex + 1) % musicList.length;
-      musicList.forEach(m => m.pause());
-      musicList[musicIndex].play();
-    }
-    updateVolumes();
-  } else if (state === GAME_OVER) {
+  } 
+  else if (state === SETTINGS) {
+    if (y > canvas.height * 0.75) state = MENU;
+  } 
+  else if (state === GAME_OVER) {
     state = MENU;
   }
 });
 
 canvas.addEventListener("touchmove", e => touchX = e.touches[0].clientX);
 canvas.addEventListener("touchend", () => touchX = null);
+
+window.addEventListener("keydown", e => {
+  if (e.key === "ArrowLeft" || e.key === "a") left = true;
+  if (e.key === "ArrowRight" || e.key === "d") right = true;
+
+  if (e.key === "Enter" && state === MENU) startGame();
+  if (e.key === "Escape") state = MENU;
+});
+
+window.addEventListener("keyup", e => {
+  if (e.key === "ArrowLeft" || e.key === "a") left = false;
+  if (e.key === "ArrowRight" || e.key === "d") right = false;
+});
 
 // ================= START GAME =================
 function startGame() {
@@ -175,17 +190,16 @@ function update() {
   }
 
   if (state === SETTINGS) {
-    center("SETTINGS", canvas.height * 0.2, 36);
-    center("Music -", canvas.height * 0.4);
-    center("Music +", canvas.height * 0.5);
-    center("SFX -", canvas.height * 0.6);
-    center("SFX +", canvas.height * 0.7);
-    center("Change Music", canvas.height * 0.8);
+    center("SETTINGS", canvas.height * 0.3, 36);
+    center("BACK", canvas.height * 0.8, 20);
     return;
   }
 
   if (state === GAME) {
     if (touchX !== null) player.x += (touchX - player.x - player.w / 2) * 0.15;
+    if (left) player.x -= player.speed;
+    if (right) player.x += player.speed;
+
     player.x = Math.max(0, Math.min(canvas.width - player.w, player.x));
 
     if (Date.now() - lastShot > 300) {
@@ -198,11 +212,20 @@ function update() {
     bullets.forEach(b => b.y -= 8);
     bullets = bullets.filter(b => b.y > -20);
 
-    if (Math.random() < 0.02) enemies.push({ x: Math.random() * (canvas.width - 48), y: -50 });
+    if (Math.random() < 0.02 && enemies.length < 6) {
+      enemies.push({ x: Math.random() * (canvas.width - 48), y: -50 });
+    }
+
     enemies.forEach(e => e.y += 3);
 
     for (let e of enemies) {
-      if (e.y > canvas.height) {
+      // ❗ ПРОИГРЫШ ТОЛЬКО ПРИ СТОЛКНОВЕНИИ
+      if (
+        player.x < e.x + 48 &&
+        player.x + player.w > e.x &&
+        player.y < e.y + 48 &&
+        player.y + player.h > e.y
+      ) {
         gameOverSound.play();
         if (score > record) {
           record = score;
@@ -210,10 +233,16 @@ function update() {
         }
         state = GAME_OVER;
       }
+
       for (let b of bullets) {
-        if (b.x > e.x && b.x < e.x + 48 && b.y > e.y && b.y < e.y + 48) {
-          e.y = canvas.height + 100;
-          b.y = -100;
+        if (
+          b.x > e.x &&
+          b.x < e.x + 48 &&
+          b.y > e.y &&
+          b.y < e.y + 48
+        ) {
+          e.y = canvas.height + 200;
+          b.y = -200;
           score++;
         }
       }
