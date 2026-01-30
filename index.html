@@ -113,8 +113,9 @@ let left = false;
 let right = false;
 
 canvas.addEventListener("touchstart", e => {
-  const y = e.touches[0].clientY;
-  touchX = e.touches[0].clientX;
+  const rect = canvas.getBoundingClientRect();
+  const y = e.touches[0].clientY - rect.top;
+  touchX = e.touches[0].clientX - rect.left;
 
   if (state === MENU) {
     if (y > canvas.height * 0.45 && y < canvas.height * 0.55) startGame();
@@ -128,17 +129,17 @@ canvas.addEventListener("touchstart", e => {
   }
 });
 
-canvas.addEventListener("touchmove", e => touchX = e.touches[0].clientX);
+canvas.addEventListener("touchmove", e => {
+  const rect = canvas.getBoundingClientRect();
+  touchX = e.touches[0].clientX - rect.left;
+});
 canvas.addEventListener("touchend", () => touchX = null);
 
 window.addEventListener("keydown", e => {
   if (e.key === "ArrowLeft" || e.key === "a") left = true;
   if (e.key === "ArrowRight" || e.key === "d") right = true;
-
-  if (e.key === "Enter" && state === MENU) startGame();
   if (e.key === "Escape") state = MENU;
 });
-
 window.addEventListener("keyup", e => {
   if (e.key === "ArrowLeft" || e.key === "a") left = false;
   if (e.key === "ArrowRight" || e.key === "d") right = false;
@@ -218,8 +219,11 @@ function update() {
 
     enemies.forEach(e => e.y += 3);
 
-    for (let e of enemies) {
-      // ❗ ПРОИГРЫШ ТОЛЬКО ПРИ СТОЛКНОВЕНИИ
+    // === COLLISIONS ===
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+
+      // player hit
       if (
         player.x < e.x + 48 &&
         player.x + player.w > e.x &&
@@ -232,18 +236,22 @@ function update() {
           localStorage.setItem("record", record);
         }
         state = GAME_OVER;
+        return;
       }
 
-      for (let b of bullets) {
+      // bullet hit
+      for (let j = bullets.length - 1; j >= 0; j--) {
+        const b = bullets[j];
         if (
           b.x > e.x &&
           b.x < e.x + 48 &&
           b.y > e.y &&
           b.y < e.y + 48
         ) {
-          e.y = canvas.height + 200;
-          b.y = -200;
+          enemies.splice(i, 1);
+          bullets.splice(j, 1);
           score++;
+          break;
         }
       }
     }
