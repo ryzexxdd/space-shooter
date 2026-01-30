@@ -2,39 +2,24 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-
-<meta name="viewport"
-      content="width=device-width,
-               height=device-height,
-               initial-scale=1.0,
-               maximum-scale=1.0,
-               user-scalable=no,
-               viewport-fit=cover">
-
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Space Shooter</title>
 
 <link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Space Shooter">
-
-<link rel="apple-touch-icon" sizes="180x180" href="icon.png">
-<link rel="icon" type="image/png" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
 
 <style>
 html, body {
   margin: 0;
   padding: 0;
-  width: 100%;
-  height: 100vh;
   background: black;
   overflow: hidden;
   touch-action: none;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
+  font-family: sans-serif;
 }
-
 canvas {
   display: block;
   margin: 0 auto;
@@ -49,10 +34,6 @@ canvas {
 // ===== CANVAS =====
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-
-// ===== AVATAR =====
-const avatarImg = new Image();
-avatarImg.src = "avatar.png";
 
 function resize() {
   const ratio = 9 / 16;
@@ -77,6 +58,22 @@ const PAUSE = 3;
 const GAME_OVER = 4;
 let state = MENU;
 
+// ===== AUDIO =====
+const musicList = [
+  new Audio("music1.mp3"),
+  new Audio("music2.mp3"),
+  new Audio("music3.mp3")
+];
+let musicIndex = 0;
+let musicVolume = 0.3;
+let sfxVolume = 0.4;
+
+musicList.forEach(m => { m.loop = true; m.volume = musicVolume; });
+
+const laserSound = new Audio("laser.wav");
+const gameOverSound = new Audio("gameover.wav");
+const recordSound = new Audio("record.wav");
+
 // ===== STORAGE =====
 let record = Number(localStorage.getItem("record")) || 0;
 
@@ -85,35 +82,36 @@ let touchX = null;
 
 canvas.addEventListener("touchstart", e => {
   const r = canvas.getBoundingClientRect();
-  const x = e.touches[0].clientX - r.left;
   const y = e.touches[0].clientY - r.top;
-  touchX = x;
 
   if (state === MENU) {
     // START
-    if (y > canvas.height * 0.55 && y < canvas.height * 0.62) {
+    if (y > canvas.height * 0.52 && y < canvas.height * 0.60) {
       startGame();
     }
     // SETTINGS
-    else if (y > canvas.height * 0.64 && y < canvas.height * 0.71) {
+    else if (y > canvas.height * 0.62 && y < canvas.height * 0.70) {
       state = SETTINGS;
     }
   }
   else if (state === SETTINGS) {
-    if (y > canvas.height * 0.82) state = MENU;
+    if (y > canvas.height * 0.80) state = MENU;
   }
   else if (state === GAME_OVER) {
     state = MENU;
   }
 });
 
-// ===== START GAME (заглушка, как было) =====
+// ===== START GAME =====
 function startGame() {
   state = GAME;
+  musicList.forEach(m => m.pause());
+  musicList[musicIndex].currentTime = 0;
+  musicList[musicIndex].play();
 }
 
 // ===== STARS =====
-const stars = Array.from({ length: 300 }, () => ({
+const stars = Array.from({ length: 120 }, () => ({
   x: Math.random(),
   y: Math.random(),
   s: Math.random() * 2 + 1
@@ -122,15 +120,15 @@ const stars = Array.from({ length: 300 }, () => ({
 function drawStars() {
   ctx.fillStyle = "white";
   for (let s of stars) {
-    s.y += s.s / 600;
+    s.y += s.s / 300;
     if (s.y > 1) s.y = 0;
     ctx.fillRect(s.x * canvas.width, s.y * canvas.height, s.s, s.s);
   }
 }
 
-function center(text, y, size) {
+function center(text, y, size = 24) {
   ctx.fillStyle = "white";
-  ctx.font = `700 ${size}px system-ui`;
+  ctx.font = `${size}px sans-serif`;
   ctx.textAlign = "center";
   ctx.fillText(text, canvas.width / 2, y);
 }
@@ -141,26 +139,16 @@ function update() {
   drawStars();
 
   if (state === MENU) {
+    center("SPACE SHOOTER", canvas.height * 0.38, 44); // чуть больше
+    center("START", canvas.height * 0.56, 22);
+    center("SETTINGS", canvas.height * 0.66, 22);
+    center("RECORD: " + record, canvas.height * 0.78, 18);
+    return;
+  }
 
-    // AVATAR (ВЕРХ)
-    const avatarSize = 160;
-    ctx.drawImage(
-      avatarImg,
-      canvas.width / 2 - avatarSize / 2,
-      canvas.height * 0.10,
-      avatarSize,
-      avatarSize
-    );
-
-    // LOGO (БОЛЬШЕ)
-    center("SPACE SHOOTER", canvas.height * 0.34, 50);
-
-    // BUTTONS (НИЖЕ)
-    center("START", canvas.height * 0.58, 26);
-    center("SETTINGS", canvas.height * 0.67, 26);
-
-    // RECORD
-    center("RECORD: " + record, canvas.height * 0.77, 18);
+  if (state === SETTINGS) {
+    center("SETTINGS", canvas.height * 0.35, 32);
+    center("BACK", canvas.height * 0.82, 20);
     return;
   }
 
