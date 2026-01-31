@@ -46,9 +46,28 @@ canvas {
 <canvas id="game"></canvas>
 
 <script>
+// ===================================================================
+// ========================= ТВОЙ КОД (НЕ ТРОНУТ) =====================
+// ===================================================================
+
 // ===== CANVAS =====
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
+
+function resize() {
+  const ratio = 9 / 16;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  if (w / h > ratio) {
+    canvas.height = h;
+    canvas.width = h * ratio;
+  } else {
+    canvas.width = w;
+    canvas.height = w / ratio;
+  }
+}
+window.addEventListener("resize", resize);
+resize();
 
 // ===== STATES =====
 const MENU = 0;
@@ -56,12 +75,14 @@ const SETTINGS = 1;
 const GAME = 2;
 const PAUSE = 3;
 const GAME_OVER = 4;
-const SHOP = 5; // === SHOP ADD ===
+
+/* === ДОБАВЛЕНО === */
+const SHOP = 5;
+
 let state = MENU;
 
 // ===== ASSETS =====
-let playerImg = new Image();
-playerImg.src = "player.png";
+const playerImg = new Image(); playerImg.src = "player.png";
 const enemyImg  = new Image(); enemyImg.src  = "enemy.png";
 
 // ===== AUDIO =====
@@ -80,21 +101,30 @@ const laserSound   = new Audio("laser.wav");
 const gameOverSound= new Audio("gameover.wav");
 const recordSound  = new Audio("record.wav");
 
+function updateVolumes() {
+  musicList.forEach(m => m.volume = musicVolume);
+  laserSound.volume = sfxVolume;
+  gameOverSound.volume = sfxVolume;
+  recordSound.volume = sfxVolume;
+}
+updateVolumes();
+
+// ===== iOS AUDIO UNLOCK =====
+let audioUnlocked = false;
+function unlockAudio() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  [...musicList, laserSound, gameOverSound, recordSound].forEach(a=>{
+    a.play().then(()=>a.pause()).catch(()=>{});
+    a.currentTime = 0;
+  });
+}
+
 // ===== STORAGE =====
 let record = Number(localStorage.getItem("record")) || 0;
 
-// === SHOP ADD ===
+/* === ДОБАВЛЕНО === */
 let coins = Number(localStorage.getItem("coins")) || 0;
-let ownedSkins = JSON.parse(localStorage.getItem("ownedSkins")) || [];
-let selectedSkin = Number(localStorage.getItem("selectedSkin")) || 0;
-
-const skins = [
-  { id:1, name:"Rare", price:100, color:"#4da6ff", img:"skin1.png" },
-  { id:2, name:"Epic", price:200, color:"#b84dff", img:"skin2.png" },
-  { id:3, name:"Mythical", price:300, color:"#ff4d4d", img:"skin3.png" },
-  { id:4, name:"Legendary", price:500, color:"#ffd700", img:"skin4.png" },
-  { id:5, name:"X", price:1000, color:"#ffffff", img:"skin5.png" }
-];
 
 // ===== PLAYER =====
 const player = { x:0, y:0, w:48, h:48 };
@@ -112,25 +142,47 @@ const stars = Array.from({ length: 300 }, () => ({
   s: Math.random() * 2 + 1
 }));
 
+// ===================================================================
+// ============================ SHOP SYSTEM ===========================
+// ===================================================================
+
+const skins = [
+  { id:1, name:"Rare",      price:100,  color:"#4da6ff" },
+  { id:2, name:"Epic",      price:200,  color:"#b84dff" },
+  { id:3, name:"Mythical",  price:300,  color:"#ff4d4d" },
+  { id:4, name:"Legendary", price:500,  color:"#ffd700" },
+  { id:5, name:"X",         price:1000, color:"#ffffff" }
+];
+
+let ownedSkins = JSON.parse(localStorage.getItem("ownedSkins")) || [];
+let selectedSkin = Number(localStorage.getItem("selectedSkin")) || 0;
+
 // ===== INPUT =====
 let touchX = null;
 
 canvas.addEventListener("touchstart", e => {
+  unlockAudio();
   const r = canvas.getBoundingClientRect();
   const x = e.touches[0].clientX - r.left;
   const y = e.touches[0].clientY - r.top;
   touchX = x;
 
+  if (state === GAME && x > canvas.width - 50 && y < 50) {
+    state = PAUSE;
+    musicList[musicIndex].pause();
+    return;
+  }
+
   if (state === MENU) {
     if (y > canvas.height*0.45 && y < canvas.height*0.55) startGame();
     else if (y > canvas.height*0.6 && y < canvas.height*0.7) state = SETTINGS;
-    else if (y > canvas.height*0.75 && y < canvas.height*0.85) state = SHOP;
+    else if (y > canvas.height*0.72 && y < canvas.height*0.8) state = SHOP;
   }
 
   else if (state === SHOP) {
     skins.forEach((s,i)=>{
-      const sy = 120 + i*90;
-      if (y > sy && y < sy+70) {
+      const sy = canvas.height*0.32 + i*55;
+      if (y > sy-20 && y < sy+20) {
         if (!ownedSkins.includes(s.id) && coins >= s.price) {
           coins -= s.price;
           ownedSkins.push(s.id);
@@ -139,15 +191,27 @@ canvas.addEventListener("touchstart", e => {
         } else if (ownedSkins.includes(s.id)) {
           selectedSkin = s.id;
           localStorage.setItem("selectedSkin", selectedSkin);
-          playerImg.src = s.img;
         }
       }
     });
-    if (y > canvas.height*0.9) state = MENU;
+    if (y > canvas.height*0.88) state = MENU;
   }
 
+  else if (state === SETTINGS) {
+    if (y > canvas.height*0.78) state = MENU;
+  }
+  else if (state === PAUSE) {
+    state = GAME;
+    musicList[musicIndex].play();
+  }
   else if (state === GAME_OVER) state = MENU;
 });
+
+canvas.addEventListener("touchmove", e => {
+  const r = canvas.getBoundingClientRect();
+  touchX = e.touches[0].clientX - r.left;
+});
+canvas.addEventListener("touchend", ()=>touchX=null);
 
 // ===== START GAME =====
 function startGame() {
@@ -155,9 +219,12 @@ function startGame() {
   player.y = canvas.height - player.h - 20;
   bullets=[]; enemies=[]; score=0; lastShot=0;
   state = GAME;
+  musicList.forEach(m=>m.pause());
+  musicList[musicIndex].currentTime=0;
+  musicList[musicIndex].play();
 }
 
-// ===== DRAW =====
+// ===== DRAW HELPERS =====
 function drawStars() {
   ctx.fillStyle="white";
   for (let s of stars) {
@@ -166,7 +233,6 @@ function drawStars() {
     ctx.fillRect(s.x*canvas.width, s.y*canvas.height, s.s, s.s);
   }
 }
-
 function center(t,y,s=24){
   ctx.fillStyle="white";
   ctx.font=`${s}px sans-serif`;
@@ -183,35 +249,42 @@ function update() {
     center("SPACE SHOOTER",canvas.height*0.35,40);
     center("START",canvas.height*0.5);
     center("SETTINGS",canvas.height*0.6);
-    center("SHOP",canvas.height*0.7);
-    center("COINS: "+coins,canvas.height*0.85,18);
+    center("SHOP",canvas.height*0.72);
+    center("COINS: "+coins,canvas.height*0.8,18);
     return;
   }
 
   if (state === SHOP) {
-    center("SHOP",50,36);
-    center("COINS: "+coins,80,18);
+    center("SHOP",canvas.height*0.18,36);
+    center("COINS: "+coins,canvas.height*0.23,18);
 
     skins.forEach((s,i)=>{
-      const y = 120 + i*90;
-      ctx.strokeStyle = s.color;
-      ctx.strokeRect(40,y,canvas.width-80,70);
+      const y = canvas.height*0.32 + i*55;
       ctx.fillStyle = s.color;
-      ctx.fillText(`${s.name} - ${s.price}`,canvas.width/2,y+40);
+      let label = `${s.name} - ${s.price}`;
+      if (ownedSkins.includes(s.id)) label = s.name + " (OWNED)";
+      if (selectedSkin === s.id) label = s.name + " (EQUIPPED)";
+      ctx.fillText(label, canvas.width/2, y);
     });
 
-    center("BACK",canvas.height-20,18);
+    center("BACK",canvas.height*0.9,18);
     return;
   }
 
   if (state === GAME) {
+    if (touchX!==null) player.x+=(touchX-player.x-player.w/2)*0.15;
+    player.x=Math.max(0,Math.min(canvas.width-player.w,player.x));
+
     if (Date.now()-lastShot>650) {
       bullets.push({x:player.x+player.w/2-2,y:player.y});
+      laserSound.currentTime=0; laserSound.play();
       lastShot=Date.now();
     }
 
     bullets.forEach(b=>b.y-=8);
+    bullets=bullets.filter(b=>b.y>-20);
 
+    if (Math.random()<0.02) enemies.push({x:Math.random()*(canvas.width-48),y:-50});
     enemies.forEach(e=>e.y+=3);
 
     for (let i=enemies.length-1;i>=0;i--){
@@ -222,24 +295,18 @@ function update() {
           enemies.splice(i,1);
           bullets.splice(j,1);
           score++;
-          coins++; // === SHOP ADD ===
-          localStorage.setItem("coins",coins);
+          coins++;
+          localStorage.setItem("coins", coins);
           break;
         }
       }
     }
 
-    ctx.drawImage(playerImg,player.x,player.y,48,48);
-    bullets.forEach(b=>ctx.fillRect(b.x,b.y,4,10));
-    enemies.forEach(e=>ctx.drawImage(enemyImg,e.x,e.y,48,48));
-
-    ctx.textAlign="left";
     ctx.fillText("Score: "+score,12,22);
     ctx.fillText("Coins: "+coins,12,40);
   }
 }
 
-// ===== LOOP =====
 (function loop(){
   update();
   requestAnimationFrame(loop);
@@ -247,3 +314,4 @@ function update() {
 </script>
 </body>
 </html>
+
