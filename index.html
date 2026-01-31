@@ -2,7 +2,6 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-
 <meta name="viewport"
       content="width=device-width,
                height=device-height,
@@ -10,17 +9,13 @@
                maximum-scale=1.0,
                user-scalable=no,
                viewport-fit=cover">
-
 <title>Space Shooter</title>
-
 <link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Space Shooter">
-
 <link rel="apple-touch-icon" sizes="180x180" href="icon.png">
 <link rel="icon" type="image/png" href="icon.png">
-
 <style>
 html, body {
   margin: 0;
@@ -34,43 +29,41 @@ html, body {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
-
-canvas {
-  display: block;
-  margin: 0 auto;
-}
+canvas { display:block; margin:0 auto; }
 </style>
 </head>
-
 <body>
 <canvas id="game"></canvas>
 
 <script>
-// ===== CANVAS =====
+// ===== CANVAS & DPR & logical size =====
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-// iPhone optimization & DPR handling
+let dpr = Math.min(window.devicePixelRatio || 1, 2);
+let lw = 0, lh = 0; // logical width/height in CSS pixels
+
 const isiOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
 function resize() {
-  const ratio = 9 / 16;
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const ratio = 9/16;
   const w = window.innerWidth;
   const h = window.innerHeight;
   let width, height;
   if (w / h > ratio) {
     height = h;
-    width = h * ratio;
+    width = Math.round(h * ratio);
   } else {
     width = w;
-    height = w / ratio;
+    height = Math.round(w / ratio);
   }
-
-  // set CSS size
+  // CSS size (logical)
   canvas.style.width = width + "px";
   canvas.style.height = height + "px";
-
-  // set backing store for crispness on retina while keeping coordinate system logical
-  const dpr = Math.min(window.devicePixelRatio || 1, 2); // cap DPR to 2 for performance
+  lw = width;
+  lh = height;
+  // backing store
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -79,46 +72,26 @@ window.addEventListener("resize", resize);
 resize();
 
 // ===== STATES =====
-const MENU = 0;
-const SETTINGS = 1;
-const GAME = 2;
-const PAUSE = 3;
-const GAME_OVER = 4;
-const SHOP = 5;
+const MENU = 0, SETTINGS = 1, GAME = 2, PAUSE = 3, GAME_OVER = 4, SHOP = 5;
 let state = MENU;
 
 // ===== ASSETS =====
 const playerImg = new Image(); playerImg.src = "player.png";
 const enemyImg  = new Image(); enemyImg.src  = "enemy.png";
-
-// skin preview images (user should add these files to same folder)
-const skinImg1 = new Image(); skinImg1.src = "skin1.png"; // Epic
-const skinImg2 = new Image(); skinImg2.src = "skin2.png"; // Mythical
-const skinImg3 = new Image(); skinImg3.src = "skin3.png"; // Legendary
-const skinImg4 = new Image(); skinImg4.src = "skin4.png"; // X
+const skinImg1 = new Image(); skinImg1.src = "skin1.png";
+const skinImg2 = new Image(); skinImg2.src = "skin2.png";
+const skinImg3 = new Image(); skinImg3.src = "skin3.png";
+const skinImg4 = new Image(); skinImg4.src = "skin4.png";
 
 // ===== AUDIO =====
-const musicList = [
-  new Audio("music1.mp3"),
-  new Audio("music2.mp3"),
-  new Audio("music3.mp3")
-];
+const musicList = [ new Audio("music1.mp3"), new Audio("music2.mp3"), new Audio("music3.mp3") ];
 let musicIndex = 0;
-let musicVolume = 0.3;
-let sfxVolume = 0.4;
-
+let musicVolume = 0.3, sfxVolume = 0.4;
 musicList.forEach(m => { m.loop = true; m.volume = musicVolume; });
-
-const laserSound   = new Audio("laser.wav");
-const gameOverSound= new Audio("gameover.wav");
-const recordSound  = new Audio("record.wav");
-
-function updateVolumes() {
-  musicList.forEach(m => m.volume = musicVolume);
-  laserSound.volume = sfxVolume;
-  gameOverSound.volume = sfxVolume;
-  recordSound.volume = sfxVolume;
-}
+const laserSound = new Audio("laser.wav");
+const gameOverSound = new Audio("gameover.wav");
+const recordSound = new Audio("record.wav");
+function updateVolumes(){ musicList.forEach(m => m.volume = musicVolume); laserSound.volume = sfxVolume; gameOverSound.volume = sfxVolume; recordSound.volume = sfxVolume; }
 updateVolumes();
 
 // ===== STORAGE =====
@@ -134,16 +107,12 @@ let enemies = [];
 let score = 0;
 let lastShot = 0;
 
-// ===== STARS (fewer on iPhone for perf) =====
+// ===== STARS =====
 const STAR_COUNT = isiOS ? 140 : 300;
-const stars = Array.from({ length: STAR_COUNT }, () => ({
-  x: Math.random(),
-  y: Math.random(),
-  s: Math.random() * 2 + 1
-}));
+const stars = Array.from({ length: STAR_COUNT }, () => ({ x: Math.random(), y: Math.random(), s: Math.random()*2+1 }));
 
-// ===== SKINS (SHOP) =====
-// id 0 = base / Rare (no preview image) — removed blue color (set color to null)
+// ===== SKINS =====
+// removed blue placeholder for Rare (color null)
 const skins = [
   {id:0,name:"Rare",cost:100,color:null, preview:null},
   {id:1,name:"Epic",cost:200,color:"purple", preview:skinImg1},
@@ -151,99 +120,78 @@ const skins = [
   {id:3,name:"Legendary",cost:400,color:"yellow", preview:skinImg3},
   {id:4,name:"X",cost:1000,color:"white", preview:skinImg4}
 ];
-let ownedSkins = JSON.parse(localStorage.getItem("ownedSkins")||"[0]"); // default own skin 0
+let ownedSkins = JSON.parse(localStorage.getItem("ownedSkins")||"[0]");
 let activeSkin = Number(localStorage.getItem("activeSkin")||0);
 
-// ===== HELPER: get current player sprite (apply active skin) =====
+// ensure player sprite uses active skin at start
+(function initSkin() {
+  const skin = skins.find(s => s.id === activeSkin);
+  if (skin && skin.preview && skin.preview.src) playerImg.src = skin.preview.src;
+})();
+
+// helper: current player image (fallback to base)
 function getActivePlayerImage() {
   const skin = skins.find(s => s.id === activeSkin);
-  if (skin && skin.preview && skin.preview.complete) return skin.preview;
+  if (skin && skin.preview && skin.preview.complete && skin.preview.naturalWidth) return skin.preview;
   return playerImg;
 }
 
-// ===== AUDIO UNLOCK (для iOS/мобильных) =====
+// ===== AUDIO UNLOCK =====
 let audioUnlocked = false;
-function unlockAudioAndMaybePlayMenu() {
+function unlockAudioAndMaybePlayMenu(){
   if (audioUnlocked) return;
   audioUnlocked = true;
-  // warm audio
   [...musicList, laserSound, gameOverSound, recordSound].forEach(a=>{
     a.play().then(()=>a.pause()).catch(()=>{});
     a.currentTime = 0;
   });
-  try {
-    if (state === MENU) {
-      musicList.forEach(m => m.pause());
-      musicList[musicIndex].currentTime = 0;
-      musicList[musicIndex].play().catch(()=>{});
-    }
-  } catch(e){}
+  try { if (state === MENU) { musicList.forEach(m=>m.pause()); musicList[musicIndex].currentTime = 0; musicList[musicIndex].play().catch(()=>{}); } } catch(e){}
 }
 
 // ===== INPUT =====
 let touchX = null;
+function getTouchPos(e){
+  const rect = canvas.getBoundingClientRect();
+  const x = e.touches[0].clientX - rect.left;
+  const y = e.touches[0].clientY - rect.top;
+  return { x, y };
+}
 
 canvas.addEventListener("touchstart", e => {
   unlockAudioAndMaybePlayMenu();
-
-  const r = canvas.getBoundingClientRect();
-  const x = e.touches[0].clientX - r.left;
-  const y = e.touches[0].clientY - r.top;
+  const pos = getTouchPos(e);
+  const x = pos.x, y = pos.y;
   touchX = x;
 
-  // pause button top-right during GAME (small area)
+  // pause button (logical coords)
   if (state === GAME) {
-    if (x > canvas.width / (window.devicePixelRatio || 1) - 50 && y < 50) {
-      state = PAUSE;
-      try { musicList[musicIndex].pause(); } catch(e){}
-      return;
-    }
+    if (x > lw - 50 && y < 50) { state = PAUSE; try { musicList[musicIndex].pause(); } catch(e){}; return; }
   }
 
-  // MENU
   if (state === MENU) {
-    const btnH = canvas.height / (window.devicePixelRatio || 1) * 0.08;
-    const startCY = canvas.height / (window.devicePixelRatio || 1) * 0.48;
-    const settingsCY = canvas.height / (window.devicePixelRatio || 1) * 0.56;
-    const shopCY = canvas.height / (window.devicePixelRatio || 1) * 0.64;
-
-    if (y > startCY - btnH/2 && y < startCY + btnH/2) {
-      startGame();
-      return;
-    } else if (y > settingsCY - btnH/2 && y < settingsCY + btnH/2) {
-      state = SETTINGS;
-      try { musicList[musicIndex].pause(); } catch(e){}
-      return;
-    } else if (y > shopCY - btnH/2 && y < shopCY + btnH/2) {
-      state = SHOP;
-      try { musicList[musicIndex].pause(); } catch(e){}
-      return;
-    }
+    const btnH = lw * 0.08;
+    const startCY = lh * 0.48;
+    const settingsCY = lh * 0.56;
+    const shopCY = lh * 0.64;
+    if (y > startCY - btnH/2 && y < startCY + btnH/2) { startGame(); return; }
+    if (y > settingsCY - btnH/2 && y < settingsCY + btnH/2) { state = SETTINGS; try { musicList[musicIndex].pause(); } catch(e){}; return; }
+    if (y > shopCY - btnH/2 && y < shopCY + btnH/2) { state = SHOP; try { musicList[musicIndex].pause(); } catch(e){}; return; }
   }
 
-  // SETTINGS interactions
   if (state === SETTINGS) {
-    if (y > canvas.height*0.35 && y < canvas.height*0.42) musicVolume = Math.max(0, musicVolume - 0.1);
-    else if (y > canvas.height*0.42 && y < canvas.height*0.49) musicVolume = Math.min(1, musicVolume + 0.1);
-    else if (y > canvas.height*0.49 && y < canvas.height*0.56) sfxVolume = Math.max(0, sfxVolume - 0.1);
-    else if (y > canvas.height*0.56 && y < canvas.height*0.63) sfxVolume = Math.min(1, sfxVolume + 0.1);
-    else if (y > canvas.height*0.63 && y < canvas.height*0.7) {
-      musicList.forEach(m => m.pause());
-      musicIndex = (musicIndex + 1) % musicList.length;
-      try { musicList[musicIndex].play(); } catch(e){}
-    }
-    else if (y > canvas.height*0.78) {
-      state = MENU;
-      try { musicList[musicIndex].play(); } catch(e){}
-    }
+    if (y > lh*0.35 && y < lh*0.42) musicVolume = Math.max(0, musicVolume - 0.1);
+    else if (y > lh*0.42 && y < lh*0.49) musicVolume = Math.min(1, musicVolume + 0.1);
+    else if (y > lh*0.49 && y < lh*0.56) sfxVolume = Math.max(0, sfxVolume - 0.1);
+    else if (y > lh*0.56 && y < lh*0.63) sfxVolume = Math.min(1, sfxVolume + 0.1);
+    else if (y > lh*0.63 && y < lh*0.7) { musicList.forEach(m => m.pause()); musicIndex = (musicIndex + 1) % musicList.length; try { musicList[musicIndex].play(); } catch(e){} }
+    else if (y > lh*0.78) { state = MENU; try { musicList[musicIndex].play(); } catch(e){} }
     updateVolumes();
     return;
   }
 
-  // SHOP interactions (click card to buy/select)
   if (state === SHOP) {
-    skins.forEach((s, i) => {
-      const cardY = canvas.height/(window.devicePixelRatio||1)*0.28 + i*100;
+    skins.forEach((s,i) => {
+      const cardY = lh*0.28 + i*100;
       if (y > cardY - 50 && y < cardY + 50) {
         if (!ownedSkins.includes(s.id)) {
           if (coins >= s.cost) {
@@ -256,311 +204,180 @@ canvas.addEventListener("touchstart", e => {
         if (ownedSkins.includes(s.id)) {
           activeSkin = s.id;
           localStorage.setItem("activeSkin", activeSkin);
+          // immediately apply sprite so player in-game shows selected skin
+          if (s.preview && s.preview.src) playerImg.src = s.preview.src;
         }
       }
     });
-    if (y > canvas.height*0.92) {
-      state = MENU;
-      try { musicList[musicIndex].play(); } catch(e){}
-    }
+    if (y > lh*0.92) { state = MENU; try { musicList[musicIndex].play(); } catch(e){} }
     return;
   }
 
-  // PAUSE resume
-  if (state === PAUSE) {
-    state = GAME;
-    try { musicList[musicIndex].play(); } catch(e){}
-    return;
-  }
-
-  // GAME_OVER -> MENU
-  if (state === GAME_OVER) {
-    state = MENU;
-    try { musicList[musicIndex].play(); } catch(e){}
-    return;
-  }
+  if (state === PAUSE) { state = GAME; try { musicList[musicIndex].play(); } catch(e){}; return; }
+  if (state === GAME_OVER) { state = MENU; try { musicList[musicIndex].play(); } catch(e){}; return; }
 });
 
 canvas.addEventListener("touchmove", e => {
-  const r = canvas.getBoundingClientRect();
-  touchX = e.touches[0].clientX - r.left;
+  const rect = canvas.getBoundingClientRect();
+  touchX = e.touches[0].clientX - rect.left;
 });
 canvas.addEventListener("touchend", ()=>touchX=null);
 
 // ===== START GAME =====
-function startGame() {
-  player.x = canvas.width/(window.devicePixelRatio||1)/2 - player.w/2;
-  player.y = canvas.height/(window.devicePixelRatio||1) - player.h - 20;
-  bullets=[]; enemies=[]; score=0; lastShot=0;
+function startGame(){
+  player.x = lw/2 - player.w/2;
+  player.y = lh - player.h - 20;
+  bullets = []; enemies = []; score = 0; lastShot = 0;
   state = GAME;
-  try {
-    musicList.forEach(m => m.pause());
-    musicList[musicIndex].currentTime = 0;
-    musicList[musicIndex].play();
-  } catch(e){}
+  try { musicList.forEach(m=>m.pause()); musicList[musicIndex].currentTime = 0; musicList[musicIndex].play(); } catch(e){}
 }
 
 // ===== DRAW HELPERS =====
-function drawStars() {
-  ctx.fillStyle="white";
+function drawStars(){
+  ctx.fillStyle = "white";
   for (let s of stars) {
-    s.y += s.s / 600; // slower background
+    s.y += s.s / 600;
     if (s.y > 1) s.y = 0;
-    ctx.fillRect(s.x*canvas.width/(window.devicePixelRatio||1), s.y*canvas.height/(window.devicePixelRatio||1), s.s, s.s);
+    ctx.fillRect(s.x*lw, s.y*lh, s.s, s.s);
   }
 }
-function center(t,y,s=24){
-  ctx.fillStyle="white";
-  ctx.font=`${s}px sans-serif`;
-  ctx.textAlign="center";
-  ctx.fillText(t,canvas.width/(window.devicePixelRatio||1)/2,y);
+function center(text, y, size=24){
+  ctx.fillStyle = "white";
+  ctx.font = `${size}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.fillText(text, lw/2, y);
 }
 
-// ===== BURST FIRE: one then second (centered) =====
-function fireBurst() {
-  // first bullet (center)
+// ===== FIRE (one then second) =====
+function fireBurst(){
   bullets.push({ x: player.x + player.w/2 - 2, y: player.y });
   try { laserSound.currentTime = 0; laserSound.play(); } catch(e){}
-  // second bullet shortly after (same center)
-  setTimeout(()=>{
-    bullets.push({ x: player.x + player.w/2 - 2, y: player.y });
-    try { laserSound.currentTime = 0; laserSound.play(); } catch(e){}
-  }, 120);
+  setTimeout(()=>{ bullets.push({ x: player.x + player.w/2 - 2, y: player.y }); try { laserSound.currentTime = 0; laserSound.play(); } catch(e){} }, 120);
 }
 
-// ===== UPDATE (game loop) =====
-function update() {
-  // clear using logical size
-  const lw = canvas.width/(window.devicePixelRatio||1);
-  const lh = canvas.height/(window.devicePixelRatio||1);
+// ===== UPDATE LOOP =====
+function update(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   drawStars();
 
-  // MENU
-  if (state === MENU) {
-    center("SPACE SHOOTER",lh*0.32,40);
-    center("START",lh*0.48);
-    center("SETTINGS",lh*0.56);
-    center("SHOP",lh*0.64);
-    center("COINS: "+coins,lh*0.72,18);
+  if (state === MENU){
+    center("SPACE SHOOTER", lh*0.32, Math.round(lw*0.04) || 40);
+    center("START", lh*0.48);
+    center("SETTINGS", lh*0.56);
+    center("SHOP", lh*0.64);
+    center("COINS: " + coins, lh*0.72, 18);
     return;
   }
 
-  // SETTINGS
-  if (state === SETTINGS) {
-    center("SETTINGS",lh*0.25,36);
-    center("Music -",lh*0.38);
-    center("Music +",lh*0.45);
-    center("SFX -",lh*0.52);
-    center("SFX +",lh*0.59);
-    center("Change Music",lh*0.66);
-    center("BACK",lh*0.82);
+  if (state === SETTINGS){
+    center("SETTINGS", lh*0.25, 36);
+    center("Music -", lh*0.38);
+    center("Music +", lh*0.45);
+    center("SFX -", lh*0.52);
+    center("SFX +", lh*0.59);
+    center("Change Music", lh*0.66);
+    center("BACK", lh*0.82);
     return;
   }
 
-  // SHOP (render cards with preview image, name and price)
-  if (state === SHOP) {
-    center("SHOP",lh*0.12,36);
-    ctx.fillStyle="white";
-    ctx.font="16px sans-serif";
-    ctx.textAlign="center";
+  if (state === SHOP){
+    center("SHOP", lh*0.12, 36);
+    ctx.fillStyle = "white"; ctx.font = "16px sans-serif"; ctx.textAlign = "center";
     ctx.fillText("COINS: " + coins, lw/2, lh*0.16);
 
-    skins.forEach((s,i)=>{
+    skins.forEach((s,i) => {
       const y = lh*0.28 + i*100;
-      // card background
       ctx.fillStyle = "rgba(255,255,255,0.03)";
       ctx.fillRect(lw*0.06, y-50, lw*0.88, 100);
-
-      // preview image area
-      const imgX = lw*0.08;
-      const imgY = y-40;
-      const imgW = Math.min(120, lw*0.26);
-      const imgH = Math.min(80, 90);
-
+      const imgX = lw*0.08; const imgY = y-40; const imgW = Math.min(120, lw*0.26); const imgH = Math.min(80, 90);
       if (s.preview && s.preview.complete && s.id !== 0) {
-        try {
-          ctx.drawImage(s.preview, imgX, imgY, imgW, imgH);
-        } catch(e){
-          ctx.fillStyle = s.color || "#aaa";
-          ctx.fillRect(imgX, imgY, imgW, imgH);
-        }
-      } else {
-        // placeholder block for base or missing preview (no blue for Rare)
-        ctx.fillStyle = s.color || "#777";
-        ctx.fillRect(imgX, imgY, imgW, imgH);
-      }
-
-      // name + price/details on the right
-      ctx.fillStyle = "white";
-      ctx.font = "18px sans-serif";
-      ctx.textAlign = "left";
+        try { ctx.drawImage(s.preview, imgX, imgY, imgW, imgH); } catch(e){ ctx.fillStyle = s.color || "#aaa"; ctx.fillRect(imgX,imgY,imgW,imgH); }
+      } else { ctx.fillStyle = s.color || "#777"; ctx.fillRect(imgX,imgY,imgW,imgH); }
+      ctx.fillStyle = "white"; ctx.font = "18px sans-serif"; ctx.textAlign = "left";
       const labelX = imgX + imgW + 18;
       ctx.fillText(s.name, labelX, y - 6);
-      ctx.font = "14px sans-serif";
-      const priceText = ownedSkins.includes(s.id) ? "OWNED" : s.cost + " coins";
+      ctx.font = "14px sans-serif"; const priceText = ownedSkins.includes(s.id) ? "OWNED" : s.cost + " coins";
       ctx.fillText(priceText, labelX, y + 18);
-
-      // small tag with rarity name (visual)
-      ctx.font = "12px sans-serif";
-      ctx.fillStyle = s.color || "#aaa";
+      ctx.font = "12px sans-serif"; ctx.fillStyle = s.color || "#aaa";
       ctx.fillText(s.id === activeSkin ? "SELECTED" : (ownedSkins.includes(s.id) ? "OWNED" : "BUY"), labelX + 160, y - 6);
-
-      // if selected, draw thin green outline on card
-      if (activeSkin === s.id) {
-        ctx.strokeStyle = "#00ff88";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(lw*0.06 + 2, y-50 + 2, lw*0.88 - 4, 100 - 4);
-      }
+      if (activeSkin === s.id) { ctx.strokeStyle = "#00ff88"; ctx.lineWidth = 2; ctx.strokeRect(lw*0.06 + 2, y-50 + 2, lw*0.88 - 4, 100 - 4); }
     });
 
-    // back
-    ctx.fillStyle="white";
-    ctx.font="16px sans-serif";
-    ctx.textAlign="center";
+    ctx.fillStyle = "white"; ctx.font = "16px sans-serif"; ctx.textAlign = "center";
     ctx.fillText("BACK", lw/2, lh*0.92);
     return;
   }
 
-  // PAUSE
-  if (state === PAUSE) {
-    center("PAUSED",lh*0.45,40);
-    center("TAP TO RESUME",lh*0.55,18);
-    return;
+  if (state === PAUSE){
+    center("PAUSED", lh*0.45, 40); center("TAP TO RESUME", lh*0.55, 18); return;
   }
 
-  // GAME
-  if (state === GAME) {
-    // move player toward touchX (touchX is in CSS pixels)
-    if (touchX!==null) player.x += (touchX - player.x - player.w/2) * 0.15;
+  if (state === GAME){
+    if (touchX !== null) player.x += (touchX - player.x - player.w/2) * 0.15;
     player.x = Math.max(0, Math.min(lw - player.w, player.x));
 
-    // burst shooting every 650 ms
-    if (Date.now() - lastShot > 650) {
-      fireBurst();
-      lastShot = Date.now();
-    }
+    if (Date.now() - lastShot > 650) { fireBurst(); lastShot = Date.now(); }
 
-    // bullets move (logical coordinates)
     bullets.forEach(b => b.y -= 8);
     bullets = bullets.filter(b => b.y > -20);
 
-    // spawn enemies
     if (Math.random() < 0.02) enemies.push({ x: Math.random() * (lw - 48), y: -50 });
     enemies.forEach(e => e.y += 3);
 
-    // collisions & logic
-    for (let i = enemies.length - 1; i >= 0; i--) {
+    for (let i = enemies.length - 1; i >= 0; i--){
       const e = enemies[i];
-
-      // lose if enemy reached bottom
-      if (e.y > lh) {
-        endGame();
-        return;
-      }
-
-      // collision with player
-      if (
-        player.x < e.x + 48 &&
-        player.x + player.w > e.x &&
-        player.y < e.y + 48 &&
-        player.y + player.h > e.y
-      ) {
-        endGame();
-        return;
-      }
-
-      // bullets hit enemy
-      for (let j = bullets.length - 1; j >= 0; j--) {
+      if (e.y > lh) { endGame(); return; }
+      if (player.x < e.x + 48 && player.x + player.w > e.x && player.y < e.y + 48 && player.y + player.h > e.y) { endGame(); return; }
+      for (let j = bullets.length - 1; j >= 0; j--){
         const b = bullets[j];
         if (b.x > e.x && b.x < e.x + 48 && b.y > e.y && b.y < e.y + 48) {
-          enemies.splice(i, 1);
-          bullets.splice(j, 1);
-          score++;
-          // монеты: каждое попадание = 1 монета
-          coins++;
-          localStorage.setItem("coins", coins);
-          break;
+          enemies.splice(i,1); bullets.splice(j,1); score++; coins++; localStorage.setItem("coins", coins); break;
         }
       }
     }
 
-    // draw player WITH active skin
     const playerSprite = getActivePlayerImage();
-    try { ctx.drawImage(playerSprite, player.x, player.y, player.w, player.h); } catch(e){
-      ctx.fillStyle = "white";
-      ctx.fillRect(player.x, player.y, player.w, player.h);
-    }
+    try { ctx.drawImage(playerSprite, player.x, player.y, player.w, player.h); } catch(e){ ctx.fillStyle = "white"; ctx.fillRect(player.x, player.y, player.w, player.h); }
 
-    // draw bullets and enemies
     bullets.forEach(b => ctx.fillRect(b.x, b.y, 4, 10));
     enemies.forEach(e => {
-      try { ctx.drawImage(enemyImg, e.x, e.y, 48, 48); } catch(e){
-        ctx.fillStyle = "red";
-        ctx.fillRect(e.x, e.y, 48, 48);
-      }
+      try { ctx.drawImage(enemyImg, e.x, e.y, 48, 48); } catch(e){ ctx.fillStyle = "red"; ctx.fillRect(e.x, e.y, 48, 48); }
     });
 
-    // HUD: score and record and coins (use logical coords)
-    ctx.font = "16px sans-serif"; ctx.textAlign = "left";
-    ctx.fillStyle = "white";
+    ctx.font = "16px sans-serif"; ctx.textAlign = "left"; ctx.fillStyle = "white";
     ctx.fillText("Score: " + score, 12, 22);
     ctx.fillText("Record: " + record, 12, 40);
     ctx.fillText("Coins: " + coins, 12, 58);
-
-    // pause icon (top-right)
-    ctx.textAlign = "right";
-    ctx.fillText("⏸", lw - 16, 30);
+    ctx.textAlign = "right"; ctx.fillText("⏸", lw - 16, 30);
     return;
   }
 
-  // GAME OVER
-  if (state === GAME_OVER) {
-    center("GAME OVER",lh*0.45,40);
-    center("TAP TO MENU",lh*0.55,18);
-    return;
+  if (state === GAME_OVER){
+    center("GAME OVER", lh*0.45, 40); center("TAP TO MENU", lh*0.55, 18); return;
   }
 }
 
 // ===== endGame =====
 function endGame(){
   try { musicList[musicIndex].pause(); } catch(e){}
-  if (score > record) {
-    record = score;
-    localStorage.setItem("record", record);
-    try { recordSound.currentTime = 0; recordSound.play(); } catch(e){}
-  } else {
-    try { gameOverSound.currentTime = 0; gameOverSound.play(); } catch(e){}
-  }
+  if (score > record) { record = score; localStorage.setItem("record", record); try { recordSound.currentTime = 0; recordSound.play(); } catch(e){} }
+  else { try { gameOverSound.currentTime = 0; gameOverSound.play(); } catch(e){} }
   state = GAME_OVER;
 }
 
-// ===== LOOP =====
-(function loop(){
-  update();
-  requestAnimationFrame(loop);
-})();
+// ===== main loop =====
+(function loop(){ update(); requestAnimationFrame(loop); })();
 
-// ensure menu music plays when returning to MENU (если разблокировано)
+// ensure menu music plays
 (function ensureMenuMusic(){
   if (state === MENU && audioUnlocked) {
-    try {
-      if (musicList[musicIndex].paused) {
-        musicList.forEach(m=>m.pause());
-        musicList[musicIndex].currentTime = 0;
-        musicList[musicIndex].play().catch(()=>{});
-      }
-    } catch(e){}
+    try { if (musicList[musicIndex].paused) { musicList.forEach(m=>m.pause()); musicList[musicIndex].currentTime = 0; musicList[musicIndex].play().catch(()=>{}); } } catch(e){}
   }
   requestAnimationFrame(ensureMenuMusic);
 })();
 
 // debug
-window.__gameDebug = {
-  coins: ()=>coins,
-  addCoins: (n=1)=>{ coins+=n; localStorage.setItem("coins",coins); },
-  setState: s => { state = s; }
-};
+window.__gameDebug = { coins: ()=>coins, addCoins: (n=1)=>{ coins+=n; localStorage.setItem("coins",coins); }, setState: s=>{ state=s; } };
 </script>
 </body>
 </html>
