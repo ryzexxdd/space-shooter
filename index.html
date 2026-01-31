@@ -138,7 +138,7 @@ let audioUnlocked = false;
 function unlockAudioAndMaybePlayMenu() {
   if (audioUnlocked) return;
   audioUnlocked = true;
-  // Попытка "пробного" прогрева аудио
+  // Прогрев аудио
   [...musicList, laserSound, gameOverSound, recordSound].forEach(a=>{
     a.play().then(()=>a.pause()).catch(()=>{});
     a.currentTime = 0;
@@ -173,26 +173,31 @@ canvas.addEventListener("touchstart", e => {
     }
   }
 
+  // MENU: определяем чёткие зоны кнопок (не пересекающиеся)
   if (state === MENU) {
-    // START
-    if (y > canvas.height*0.45 && y < canvas.height*0.55) {
+    // вычислим высоты кнопок
+    const btnH = canvas.height * 0.08; // площадь кнопки
+    const startCY = canvas.height * 0.48;
+    const settingsCY = canvas.height * 0.56;
+    const shopCY = canvas.height * 0.64;
+
+    if (y > startCY - btnH/2 && y < startCY + btnH/2) {
       startGame();
       return;
-    }
-    // SETTINGS
-    if (y > canvas.height*0.58 && y < canvas.height*0.66) {
+    } else if (y > settingsCY - btnH/2 && y < settingsCY + btnH/2) {
       state = SETTINGS;
+      // при входе в настройки ставим паузу музыки (опционально)
+      try { musicList[musicIndex].pause(); } catch(e){}
       return;
-    }
-    // SHOP
-    if (y > canvas.height*0.70 && y < canvas.height*0.78) {
+    } else if (y > shopCY - btnH/2 && y < shopCY + btnH/2) {
       state = SHOP;
+      try { musicList[musicIndex].pause(); } catch(e){}
       return;
     }
   }
 
+  // SETTINGS interactions
   if (state === SETTINGS) {
-    // меню настроек: те же зоны как раньше (упрощённо)
     if (y > canvas.height*0.35 && y < canvas.height*0.42) musicVolume = Math.max(0, musicVolume - 0.1);
     else if (y > canvas.height*0.42 && y < canvas.height*0.49) musicVolume = Math.min(1, musicVolume + 0.1);
     else if (y > canvas.height*0.49 && y < canvas.height*0.56) sfxVolume = Math.max(0, sfxVolume - 0.1);
@@ -211,8 +216,8 @@ canvas.addEventListener("touchstart", e => {
     return;
   }
 
+  // SHOP interactions
   if (state === SHOP) {
-    // клики по скинам
     skins.forEach((s, i) => {
       const sy = canvas.height*0.3 + i*45;
       if (y > sy - 18 && y < sy + 18) {
@@ -237,12 +242,14 @@ canvas.addEventListener("touchstart", e => {
     return;
   }
 
+  // PAUSE resume
   if (state === PAUSE) {
     state = GAME;
     try { musicList[musicIndex].play(); } catch(e){}
     return;
   }
 
+  // GAME_OVER -> MENU
   if (state === GAME_OVER) {
     state = MENU;
     try { musicList[musicIndex].play(); } catch(e){}
@@ -396,23 +403,10 @@ function update() {
       }
     }
 
-    // draw player with skin visual (colored border)
-    // draw border circle to indicate active skin color
-    const skinColor = skins.find(s=>s.id===activeSkin)?.color || "white";
-    ctx.save();
-    // border
-    ctx.beginPath();
-    ctx.strokeStyle = skinColor;
-    ctx.lineWidth = 3;
-    ctx.rect(player.x-2, player.y-2, player.w+4, player.h+4);
-    ctx.stroke();
-    ctx.closePath();
-    ctx.restore();
-
-    // draw player image
+    // draw player WITHOUT border (убрал обводку во время игры)
     try { ctx.drawImage(playerImg, player.x, player.y, player.w, player.h); } catch(e){
-      // if image missing, draw placeholder
-      ctx.fillStyle = skinColor;
+      // если нет картинки — просто прямоугольник
+      ctx.fillStyle = "white";
       ctx.fillRect(player.x, player.y, player.w, player.h);
     }
 
@@ -465,10 +459,8 @@ function endGame(){
   requestAnimationFrame(loop);
 })();
 
-// small helper: ensure menu music plays when returning to MENU
-// watch state transitions and play menu music after first touch
+// ensure menu music plays when returning to MENU (если разблокировано)
 (function ensureMenuMusic(){
-  // If in MENU and audio unlocked then ensure music playing
   if (state === MENU && audioUnlocked) {
     try {
       if (musicList[musicIndex].paused) {
@@ -481,7 +473,7 @@ function endGame(){
   requestAnimationFrame(ensureMenuMusic);
 })();
 
-// extra: expose some functions to console for debug
+// debug
 window.__gameDebug = {
   coins: ()=>coins,
   addCoins: (n=1)=>{ coins+=n; localStorage.setItem("coins",coins); },
