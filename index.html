@@ -50,31 +50,18 @@ canvas {
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-function resize() {
-  const ratio = 9 / 16;
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  if (w / h > ratio) {
-    canvas.height = h;
-    canvas.width = h * ratio;
-  } else {
-    canvas.width = w;
-    canvas.height = w / ratio;
-  }
-}
-window.addEventListener("resize", resize);
-resize();
-
 // ===== STATES =====
 const MENU = 0;
 const SETTINGS = 1;
 const GAME = 2;
 const PAUSE = 3;
 const GAME_OVER = 4;
+const SHOP = 5; // === SHOP ADD ===
 let state = MENU;
 
 // ===== ASSETS =====
-const playerImg = new Image(); playerImg.src = "player.png";
+let playerImg = new Image();
+playerImg.src = "player.png";
 const enemyImg  = new Image(); enemyImg.src  = "enemy.png";
 
 // ===== AUDIO =====
@@ -93,27 +80,21 @@ const laserSound   = new Audio("laser.wav");
 const gameOverSound= new Audio("gameover.wav");
 const recordSound  = new Audio("record.wav");
 
-function updateVolumes() {
-  musicList.forEach(m => m.volume = musicVolume);
-  laserSound.volume = sfxVolume;
-  gameOverSound.volume = sfxVolume;
-  recordSound.volume = sfxVolume;
-}
-updateVolumes();
-
-// ===== iOS AUDIO UNLOCK =====
-let audioUnlocked = false;
-function unlockAudio() {
-  if (audioUnlocked) return;
-  audioUnlocked = true;
-  [...musicList, laserSound, gameOverSound, recordSound].forEach(a=>{
-    a.play().then(()=>a.pause()).catch(()=>{});
-    a.currentTime = 0;
-  });
-}
-
 // ===== STORAGE =====
 let record = Number(localStorage.getItem("record")) || 0;
+
+// === SHOP ADD ===
+let coins = Number(localStorage.getItem("coins")) || 0;
+let ownedSkins = JSON.parse(localStorage.getItem("ownedSkins")) || [];
+let selectedSkin = Number(localStorage.getItem("selectedSkin")) || 0;
+
+const skins = [
+  { id:1, name:"Rare", price:100, color:"#4da6ff", img:"skin1.png" },
+  { id:2, name:"Epic", price:200, color:"#b84dff", img:"skin2.png" },
+  { id:3, name:"Mythical", price:300, color:"#ff4d4d", img:"skin3.png" },
+  { id:4, name:"Legendary", price:500, color:"#ffd700", img:"skin4.png" },
+  { id:5, name:"X", price:1000, color:"#ffffff", img:"skin5.png" }
+];
 
 // ===== PLAYER =====
 const player = { x:0, y:0, w:48, h:48 };
@@ -135,47 +116,38 @@ const stars = Array.from({ length: 300 }, () => ({
 let touchX = null;
 
 canvas.addEventListener("touchstart", e => {
-  unlockAudio();
   const r = canvas.getBoundingClientRect();
   const x = e.touches[0].clientX - r.left;
   const y = e.touches[0].clientY - r.top;
   touchX = x;
 
-  if (state === GAME && x > canvas.width - 50 && y < 50) {
-    state = PAUSE;
-    musicList[musicIndex].pause();
-    return;
-  }
-
   if (state === MENU) {
     if (y > canvas.height*0.45 && y < canvas.height*0.55) startGame();
     else if (y > canvas.height*0.6 && y < canvas.height*0.7) state = SETTINGS;
+    else if (y > canvas.height*0.75 && y < canvas.height*0.85) state = SHOP;
   }
-  else if (state === SETTINGS) {
-    if (y > canvas.height*0.35 && y < canvas.height*0.42) musicVolume=Math.max(0,musicVolume-0.1);
-    else if (y > canvas.height*0.42 && y < canvas.height*0.49) musicVolume=Math.min(1,musicVolume+0.1);
-    else if (y > canvas.height*0.49 && y < canvas.height*0.56) sfxVolume=Math.max(0,sfxVolume-0.1);
-    else if (y > canvas.height*0.56 && y < canvas.height*0.63) sfxVolume=Math.min(1,sfxVolume+0.1);
-    else if (y > canvas.height*0.63 && y < canvas.height*0.7) {
-      musicList.forEach(m=>m.pause());
-      musicIndex=(musicIndex+1)%musicList.length;
-      musicList[musicIndex].play();
-    }
-    else if (y > canvas.height*0.78) state = MENU;
-    updateVolumes();
+
+  else if (state === SHOP) {
+    skins.forEach((s,i)=>{
+      const sy = 120 + i*90;
+      if (y > sy && y < sy+70) {
+        if (!ownedSkins.includes(s.id) && coins >= s.price) {
+          coins -= s.price;
+          ownedSkins.push(s.id);
+          localStorage.setItem("coins", coins);
+          localStorage.setItem("ownedSkins", JSON.stringify(ownedSkins));
+        } else if (ownedSkins.includes(s.id)) {
+          selectedSkin = s.id;
+          localStorage.setItem("selectedSkin", selectedSkin);
+          playerImg.src = s.img;
+        }
+      }
+    });
+    if (y > canvas.height*0.9) state = MENU;
   }
-  else if (state === PAUSE) {
-    state = GAME;
-    musicList[musicIndex].play();
-  }
+
   else if (state === GAME_OVER) state = MENU;
 });
-
-canvas.addEventListener("touchmove", e => {
-  const r = canvas.getBoundingClientRect();
-  touchX = e.touches[0].clientX - r.left;
-});
-canvas.addEventListener("touchend", ()=>touchX=null);
 
 // ===== START GAME =====
 function startGame() {
@@ -183,20 +155,18 @@ function startGame() {
   player.y = canvas.height - player.h - 20;
   bullets=[]; enemies=[]; score=0; lastShot=0;
   state = GAME;
-  musicList.forEach(m=>m.pause());
-  musicList[musicIndex].currentTime=0;
-  musicList[musicIndex].play();
 }
 
-// ===== DRAW HELPERS =====
+// ===== DRAW =====
 function drawStars() {
   ctx.fillStyle="white";
   for (let s of stars) {
-    s.y += s.s / 600; // ⭐ МЕДЛЕННЕЕ ФОН
+    s.y += s.s / 600;
     if (s.y > 1) s.y = 0;
     ctx.fillRect(s.x*canvas.width, s.y*canvas.height, s.s, s.s);
   }
 }
+
 function center(t,y,s=24){
   ctx.fillStyle="white";
   ctx.font=`${s}px sans-serif`;
@@ -212,52 +182,49 @@ function update() {
   if (state === MENU) {
     center("SPACE SHOOTER",canvas.height*0.35,40);
     center("START",canvas.height*0.5);
-    center("SETTINGS",canvas.height*0.65);
-    center("RECORD: "+record,canvas.height*0.8,18);
+    center("SETTINGS",canvas.height*0.6);
+    center("SHOP",canvas.height*0.7);
+    center("COINS: "+coins,canvas.height*0.85,18);
     return;
   }
 
-  if (state === SETTINGS) {
-    center("SETTINGS",canvas.height*0.25,36);
-    center("Music -",canvas.height*0.38);
-    center("Music +",canvas.height*0.45);
-    center("SFX -",canvas.height*0.52);
-    center("SFX +",canvas.height*0.59);
-    center("Change Music",canvas.height*0.66);
-    center("BACK",canvas.height*0.82);
-    return;
-  }
+  if (state === SHOP) {
+    center("SHOP",50,36);
+    center("COINS: "+coins,80,18);
 
-  if (state === PAUSE) {
-    center("PAUSED",canvas.height*0.45,40);
-    center("TAP TO RESUME",canvas.height*0.55,18);
+    skins.forEach((s,i)=>{
+      const y = 120 + i*90;
+      ctx.strokeStyle = s.color;
+      ctx.strokeRect(40,y,canvas.width-80,70);
+      ctx.fillStyle = s.color;
+      ctx.fillText(`${s.name} - ${s.price}`,canvas.width/2,y+40);
+    });
+
+    center("BACK",canvas.height-20,18);
     return;
   }
 
   if (state === GAME) {
-    if (touchX!==null) player.x+=(touchX-player.x-player.w/2)*0.15;
-    player.x=Math.max(0,Math.min(canvas.width-player.w,player.x));
-
-    if (Date.now()-lastShot>650) { // 🔫 МЕДЛЕННЕЕ СТРЕЛЬБА
+    if (Date.now()-lastShot>650) {
       bullets.push({x:player.x+player.w/2-2,y:player.y});
-      laserSound.currentTime=0; laserSound.play();
       lastShot=Date.now();
     }
 
     bullets.forEach(b=>b.y-=8);
-    bullets=bullets.filter(b=>b.y>-20);
 
-    if (Math.random()<0.02) enemies.push({x:Math.random()*(canvas.width-48),y:-50});
     enemies.forEach(e=>e.y+=3);
 
     for (let i=enemies.length-1;i>=0;i--){
       const e=enemies[i];
-      if (e.y>canvas.height) return endGame();
-      if (player.x<e.x+48&&player.x+48>e.x&&player.y<e.y+48&&player.y+48>e.y) return endGame();
       for (let j=bullets.length-1;j>=0;j--){
         const b=bullets[j];
         if (b.x>e.x&&b.x<e.x+48&&b.y>e.y&&b.y<e.y+48){
-          enemies.splice(i,1); bullets.splice(j,1); score++; break;
+          enemies.splice(i,1);
+          bullets.splice(j,1);
+          score++;
+          coins++; // === SHOP ADD ===
+          localStorage.setItem("coins",coins);
+          break;
         }
       }
     }
@@ -266,30 +233,10 @@ function update() {
     bullets.forEach(b=>ctx.fillRect(b.x,b.y,4,10));
     enemies.forEach(e=>ctx.drawImage(enemyImg,e.x,e.y,48,48));
 
-    ctx.font="16px sans-serif"; ctx.textAlign="left";
+    ctx.textAlign="left";
     ctx.fillText("Score: "+score,12,22);
-    ctx.fillText("Record: "+record,12,40);
-
-    ctx.textAlign="right";
-    ctx.fillText("⏸",canvas.width-16,30);
+    ctx.fillText("Coins: "+coins,12,40);
   }
-
-  if (state === GAME_OVER) {
-    center("GAME OVER",canvas.height*0.45,40);
-    center("TAP TO MENU",canvas.height*0.55,18);
-  }
-}
-
-function endGame(){
-  musicList[musicIndex].pause();
-  if (score>record){
-    record=score;
-    localStorage.setItem("record",record);
-    recordSound.currentTime=0; recordSound.play();
-  } else {
-    gameOverSound.currentTime=0; gameOverSound.play();
-  }
-  state=GAME_OVER;
 }
 
 // ===== LOOP =====
@@ -300,7 +247,3 @@ function endGame(){
 </script>
 </body>
 </html>
-
-</body>
-</html>
-
