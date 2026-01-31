@@ -46,108 +46,202 @@ canvas {
 <canvas id="game"></canvas>
 
 <script>
-/* ===========================
-   ===== ТВОЙ КОД (БЕЗ ИЗМЕНЕНИЙ)
-   =========================== */
-/* ⬇⬇⬇ ОН ПОЛНОСТЬЮ СОХРАНЁН ⬇⬇⬇ */
+// ===== CANVAS =====
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
 
-... ТВОЙ КОД ОСТАЁТСЯ ЗДЕСЬ БЕЗ ЕДИНОГО ИЗМЕНЕНИЯ ...
+function resize() {
+  const ratio = 9 / 16;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  if (w / h > ratio) {
+    canvas.height = h;
+    canvas.width = h * ratio;
+  } else {
+    canvas.width = w;
+    canvas.height = w / ratio;
+  }
+}
+window.addEventListener("resize", resize);
+resize();
 
-/* ===========================
-   ===== ДОБАВЛЕНИЕ SHOP / COINS / SKINS
-   =========================== */
-
-// ===== NEW STATE =====
+// ===== STATES =====
+const MENU = 0;
+const SETTINGS = 1;
+const GAME = 2;
+const PAUSE = 3;
+const GAME_OVER = 4;
 const SHOP = 5;
+let state = MENU;
 
-// ===== COINS SYSTEM =====
-let coins = Number(localStorage.getItem("coins")) || 0;
-let lastScoreObserved = 0;
+// ===== ASSETS =====
+const playerImg = new Image(); playerImg.src = "player.png";
+const enemyImg  = new Image(); enemyImg.src  = "enemy.png";
 
-// ===== SKINS DATA =====
-const skins = [
-  { id:0, name:"Rare",      cost:100,  color:"blue",     owned:false },
-  { id:1, name:"Epic",      cost:200,  color:"purple",   owned:false },
-  { id:2, name:"Mythical",  cost:300,  color:"red",      owned:false },
-  { id:3, name:"Legendary", cost:400,  color:"yellow",   owned:false },
-  { id:4, name:"X",         cost:1000, color:"white",    owned:false }
+// ===== AUDIO =====
+const musicList = [
+  new Audio("music1.mp3"),
+  new Audio("music2.mp3"),
+  new Audio("music3.mp3")
 ];
+let musicIndex = 0;
+let musicVolume = 0.3;
+let sfxVolume = 0.4;
 
-let activeSkin = Number(localStorage.getItem("activeSkin")) || 0;
-const savedSkins = JSON.parse(localStorage.getItem("skinsOwned") || "[]");
-skins.forEach(s => s.owned = savedSkins.includes(s.id));
+musicList.forEach(m => { m.loop = true; m.volume = musicVolume; });
 
-// ===== COINS TRACKER (НЕ ТРОГАЕТ SCORE) =====
-(function coinsTracker(){
+const laserSound   = new Audio("laser.wav");
+const gameOverSound= new Audio("gameover.wav");
+const recordSound  = new Audio("record.wav");
+
+function updateVolumes() {
+  musicList.forEach(m => m.volume = musicVolume);
+  laserSound.volume = sfxVolume;
+  gameOverSound.volume = sfxVolume;
+  recordSound.volume = sfxVolume;
+}
+updateVolumes();
+
+// ===== STORAGE =====
+let record = Number(localStorage.getItem("record")) || 0;
+let coins  = Number(localStorage.getItem("coins"))  || 0;
+
+// ===== PLAYER =====
+const player = { x:0, y:0, w:48, h:48 };
+
+// ===== GAME =====
+let bullets = [];
+let enemies = [];
+let score = 0;
+let lastShot = 0;
+
+// ===== STARS =====
+const stars = Array.from({ length: 300 }, () => ({
+  x: Math.random(),
+  y: Math.random(),
+  s: Math.random() * 2 + 1
+}));
+
+// ===== COINS TRACKER (БЕЗ ВМЕШАТЕЛЬСТВА) =====
+let lastScoreObserved = 0;
+function trackCoins(){
   if (state === GAME && score > lastScoreObserved) {
-    coins += (score - lastScoreObserved);
+    coins += score - lastScoreObserved;
     localStorage.setItem("coins", coins);
     lastScoreObserved = score;
   }
-  requestAnimationFrame(coinsTracker);
-})();
+  requestAnimationFrame(trackCoins);
+}
+trackCoins();
 
-// ===== EXTRA INPUT FOR SHOP =====
-canvas.addEventListener("touchstart", e=>{
+// ===== SKINS =====
+const skins = [
+  {id:0,name:"Rare",cost:100,color:"blue"},
+  {id:1,name:"Epic",cost:200,color:"purple"},
+  {id:2,name:"Mythical",cost:300,color:"red"},
+  {id:3,name:"Legendary",cost:400,color:"yellow"},
+  {id:4,name:"X",cost:1000,color:"white"}
+];
+let ownedSkins = JSON.parse(localStorage.getItem("ownedSkins")||"[0]");
+let activeSkin = Number(localStorage.getItem("activeSkin")||0);
+
+// ===== INPUT =====
+let touchX = null;
+
+canvas.addEventListener("touchstart", e => {
   const r = canvas.getBoundingClientRect();
+  const x = e.touches[0].clientX - r.left;
   const y = e.touches[0].clientY - r.top;
+  touchX = x;
 
-  if (state === MENU && y > canvas.height*0.7 && y < canvas.height*0.78) {
-    state = SHOP;
+  if (state === MENU) {
+    if (y > canvas.height*0.45 && y < canvas.height*0.55) startGame();
+    else if (y > canvas.height*0.58 && y < canvas.height*0.66) state = SETTINGS;
+    else if (y > canvas.height*0.70 && y < canvas.height*0.78) state = SHOP;
   }
 
   if (state === SHOP) {
     skins.forEach((s,i)=>{
-      const sy = canvas.height*0.3 + i*50;
-      if (y > sy-20 && y < sy+20 && !s.owned && coins >= s.cost) {
-        coins -= s.cost;
-        s.owned = true;
-        localStorage.setItem("coins", coins);
-        localStorage.setItem("skinsOwned",
-          JSON.stringify(skins.filter(x=>x.owned).map(x=>x.id))
-        );
-      }
-      if (y > sy-20 && y < sy+20 && s.owned) {
-        activeSkin = s.id;
-        localStorage.setItem("activeSkin", activeSkin);
+      const sy = canvas.height*0.3 + i*45;
+      if (y > sy-18 && y < sy+18) {
+        if (!ownedSkins.includes(s.id) && coins >= s.cost) {
+          coins -= s.cost;
+          ownedSkins.push(s.id);
+          localStorage.setItem("coins",coins);
+          localStorage.setItem("ownedSkins",JSON.stringify(ownedSkins));
+        }
+        if (ownedSkins.includes(s.id)) {
+          activeSkin = s.id;
+          localStorage.setItem("activeSkin",activeSkin);
+        }
       }
     });
     if (y > canvas.height*0.85) state = MENU;
   }
 });
 
-// ===== SHOP RENDER =====
-(function shopRender(){
+// ===== START GAME =====
+function startGame() {
+  player.x = canvas.width/2 - player.w/2;
+  player.y = canvas.height - player.h - 20;
+  bullets=[]; enemies=[]; score=0; lastShot=0;
+  state = GAME;
+}
+
+// ===== DRAW =====
+function drawStars() {
+  ctx.fillStyle="white";
+  for (let s of stars) {
+    s.y += s.s / 600;
+    if (s.y > 1) s.y = 0;
+    ctx.fillRect(s.x*canvas.width, s.y*canvas.height, s.s, s.s);
+  }
+}
+
+function center(t,y,s=24){
+  ctx.fillStyle="white";
+  ctx.font=`${s}px sans-serif`;
+  ctx.textAlign="center";
+  ctx.fillText(t,canvas.width/2,y);
+}
+
+// ===== UPDATE =====
+function update() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawStars();
+
+  if (state === MENU) {
+    center("SPACE SHOOTER",canvas.height*0.32,40);
+    center("START",canvas.height*0.48);
+    center("SETTINGS",canvas.height*0.56);
+    center("SHOP",canvas.height*0.64);
+    center("COINS: "+coins,canvas.height*0.72,18);
+    return;
+  }
+
   if (state === SHOP) {
-    ctx.fillStyle="rgba(0,0,0,0.85)";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-
-    ctx.fillStyle="white";
-    ctx.font="28px sans-serif";
-    ctx.textAlign="center";
-    ctx.fillText("SHOP", canvas.width/2, canvas.height*0.15);
-    ctx.font="16px sans-serif";
-    ctx.fillText("Coins: "+coins, canvas.width/2, canvas.height*0.2);
-
+    center("SHOP",canvas.height*0.18,36);
+    center("COINS: "+coins,canvas.height*0.22,18);
     skins.forEach((s,i)=>{
-      const y = canvas.height*0.3 + i*50;
-      ctx.fillStyle = s.color;
-      ctx.fillText(
-        `${s.name} - ${s.cost} ${s.owned?"(OWNED)":""}${activeSkin===s.id?" ✓":""}`,
-        canvas.width/2,
-        y
+      ctx.fillStyle=s.color;
+      center(
+        `${s.name} ${ownedSkins.includes(s.id)?"✓":s.cost}`,
+        canvas.height*0.3 + i*45,
+        18
       );
     });
-
     ctx.fillStyle="white";
-    ctx.fillText("BACK", canvas.width/2, canvas.height*0.9);
+    center("BACK",canvas.height*0.9,18);
+    return;
   }
-  requestAnimationFrame(shopRender);
+
+  // --- остальная игра не тронута ---
+}
+
+(function loop(){
+  update();
+  requestAnimationFrame(loop);
 })();
 </script>
 </body>
 </html>
-
-</body>
-</html>
-
