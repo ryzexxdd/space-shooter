@@ -29,7 +29,7 @@ html, body {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
-canvas { display:block; margin:0 auto; }
+canvas { display:block; margin:0 auto; touch-action: none; -webkit-tap-highlight-color: transparent; }
 </style>
 </head>
 <body>
@@ -39,6 +39,9 @@ canvas { display:block; margin:0 auto; }
 // ===== CANVAS & DPR & logical size =====
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
+
+// make pixel-art crisp
+ctx.imageSmoothingEnabled = false;
 
 let dpr = Math.min(window.devicePixelRatio || 1, 2);
 let lw = 0, lh = 0; // logical width/height in CSS pixels
@@ -67,6 +70,8 @@ function resize() {
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // restore crisp pixel art after transform
+  ctx.imageSmoothingEnabled = false;
 }
 window.addEventListener("resize", resize);
 resize();
@@ -149,14 +154,25 @@ let audioUnlocked = false;
 function unlockAudioAndMaybePlayMenu(){
   if (audioUnlocked) return;
   audioUnlocked = true;
+  // try to prime audio elements once
   [...musicList, laserSound, gameOverSound, recordSound].forEach(a=>{
     a.play().then(()=>a.pause()).catch(()=>{});
     a.currentTime = 0;
   });
-  try { if (state === MENU) { musicList.forEach(m=>m.pause()); musicList[musicIndex].currentTime = 0; musicList[musicIndex].play().catch(()=>{}); } } catch(e){}
+  try {
+    if (state === MENU) {
+      musicList.forEach(m=>m.pause());
+      musicList[musicIndex].currentTime = 0;
+      musicList[musicIndex].play().catch(()=>{});
+    }
+  } catch(e){}
 }
 
 // ===== INPUT =====
+// prevent Safari iOS from scrolling/pinch-zoom while touching canvas
+canvas.addEventListener("touchstart", e => { try{ e.preventDefault(); } catch(e){} }, { passive:false });
+canvas.addEventListener("touchmove", e => { try{ e.preventDefault(); } catch(e){} }, { passive:false });
+
 let touchX = null;
 function getTouchPos(e){
   const rect = canvas.getBoundingClientRect();
@@ -264,8 +280,8 @@ function fireBurst(){
 }
 
 // ===== UPDATE LOOP =====
+// use logical size (lw,lh) for drawing to avoid scaling artifacts
 function update(){
-  // clear using logical size (lw, lh) to avoid scaling artifacts
   ctx.clearRect(0,0,lw,lh);
   drawStars();
 
@@ -386,10 +402,42 @@ function endGame(){
   state = GAME_OVER;
 }
 
-// ===== main loop =====
-(function loop(){ update(); requestAnimationFrame(loop); })();
+// ===== Visibility handling (reduce CPU when hidden) =====
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    try { musicList.forEach(m => m.pause()); } catch(e){}
+  } else {
+    // restore menu music if appropriate
+    if (state === MENU && audioUnlocked) {
+      try { musicList.forEach(m=>m.pause()); musicList[musicIndex].currentTime = 0; musicList[musicIndex].play().catch(()=>{}); } catch(e){}
+    }
+  }
+});
 
-// ensure menu music plays
+// ===== FPS STABILIZER =====
+let lastFrameTime = 0;
+const TARGET_FPS = isiOS ? 60 : 120;
+const FRAME_TIME = 1000 / TARGET_FPS;
+
+// ===== main loop =====
+(function loop(time){
+  // if tab is hidden - skip heavy updates
+  if (document.hidden) {
+    requestAnimationFrame(loop);
+    return;
+  }
+
+  if (!lastFrameTime) lastFrameTime = time;
+  const elapsed = time - lastFrameTime;
+  if (elapsed >= FRAME_TIME) {
+    update();
+    // avoid drift
+    lastFrameTime = time - (elapsed % FRAME_TIME);
+  }
+  requestAnimationFrame(loop);
+})();
+
+// ensure menu music plays (keeps original logic)
 (function ensureMenuMusic(){
   if (state === MENU && audioUnlocked) {
     try { if (musicList[musicIndex].paused) { musicList.forEach(m=>m.pause()); musicList[musicIndex].currentTime = 0; musicList[musicIndex].play().catch(()=>{}); } } catch(e){}
@@ -402,5 +450,3 @@ window.__gameDebug = { coins: ()=>coins, addCoins: (n=1)=>{ coins+=n; localStora
 </script>
 </body>
 </html>
-
-
