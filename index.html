@@ -40,23 +40,21 @@ canvas { display:block; margin:0 auto; touch-action: none; -webkit-tap-highlight
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-// make pixel-art crisp
-if ('imageSmoothingEnabled' in ctx) ctx.imageSmoothingEnabled = false;
+// try to keep pixel art crisp
+try { if ('imageSmoothingEnabled' in ctx) ctx.imageSmoothingEnabled = false; } catch(e){}
 
 let dpr = Math.min(window.devicePixelRatio || 1, 2);
 let lw = 0, lh = 0; // logical width/height in CSS pixels
 
 const isiOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-// Adaptive star count based on device class
+// compute star count conservatively
 function computeStarCount() {
-  // lower for small screens & iOS to save CPU
   if (isiOS) return 140;
   const area = window.innerWidth * window.innerHeight;
   if (area < 360000) return 180;
   return 300;
 }
-
 let STAR_COUNT = computeStarCount();
 
 function resize() {
@@ -77,13 +75,12 @@ function resize() {
   canvas.style.height = height + "px";
   lw = width;
   lh = height;
-  // backing store (physical)
+  // backing store
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  if ('imageSmoothingEnabled' in ctx) ctx.imageSmoothingEnabled = false;
-
-  // recompute star count for this resolution
+  try { if ('imageSmoothingEnabled' in ctx) ctx.imageSmoothingEnabled = false; } catch(e){}
+  // recompute star count if needed
   STAR_COUNT = computeStarCount();
   initStars();
 }
@@ -94,28 +91,25 @@ resize();
 const MENU = 0, SETTINGS = 1, GAME = 2, PAUSE = 3, GAME_OVER = 4, SHOP = 5;
 let state = MENU;
 
-// ===== ASSET LOADER HELPERS =====
-function makeImage(src){
+// ===== ASSETS =====
+function makeImg(src){
   const img = new Image();
   img.__loaded = false;
   img.src = src;
-  img.onload = ()=> { img.__loaded = true; };
-  img.onerror = ()=> { img.__loaded = false; console.warn('Image load failed:', src); };
-  // try decode() to mark loaded as soon as ready (modern browsers)
-  if (img.decode) {
-    img.decode().then(()=>{ img.__loaded = true; }).catch(()=>{ /* ignore */ });
-  }
+  img.onload = ()=>{ img.__loaded = true; };
+  img.onerror = ()=>{ img.__loaded = false; console.warn('img load failed', src); };
+  // try decode for modern browsers
+  if (img.decode) img.decode().then(()=>img.__loaded = true).catch(()=>{});
   return img;
 }
 
-// ===== ASSETS =====
-const playerImg = makeImage("player.png");
-const enemyImg  = makeImage("enemy.png");
-const skinImg1 = makeImage("skin1.png");
-const skinImg2 = makeImage("skin2.png");
-const skinImg3 = makeImage("skin3.png");
-const skinImg4 = makeImage("skin4.png");
-const skinImg6 = makeImage("skin6.png"); // ваш файл skin6.png
+const playerImg = makeImg("player.png");
+const enemyImg  = makeImg("enemy.png");
+const skinImg1 = makeImg("skin1.png");
+const skinImg2 = makeImg("skin2.png");
+const skinImg3 = makeImg("skin3.png");
+const skinImg4 = makeImg("skin4.png");
+const skinImg6 = makeImg("skin6.png");
 
 // ===== AUDIO =====
 const musicList = [ new Audio("music1.mp3"), new Audio("music2.mp3"), new Audio("music3.mp3") ];
@@ -142,20 +136,17 @@ let score = 0;
 let lastShot = 0;
 
 // ===== STARS =====
-// Use a lighter-weight star structure and init on resize
 let stars = [];
-function initStars() {
-  stars = Array.from({ length: STAR_COUNT }, () => ({
-    x: Math.random(),
-    y: Math.random(),
-    s: Math.random()*2+1,
-    v: (Math.random()*0.6 + 0.4) / 600 // velocity factor similar to original s/600 but precomputed
-  }));
+function initStars(){
+  // lightweight precomputed velocities
+  stars = Array.from({ length: STAR_COUNT }, () => {
+    const s = Math.random()*2+1;
+    return { x: Math.random(), y: Math.random(), s: s, v: s/600 };
+  });
 }
 initStars();
 
 // ===== SKINS =====
-// Rare получает preview: skinImg6
 const skins = [
   {id:0,name:"Rare",cost:100,color:null, preview:skinImg6},
   {id:1,name:"Epic",cost:200,color:"purple", preview:skinImg1},
@@ -166,14 +157,13 @@ const skins = [
 let ownedSkins = JSON.parse(localStorage.getItem("ownedSkins")||"[0]");
 let activeSkin = Number(localStorage.getItem("activeSkin")||0);
 
-// ensure player sprite uses active skin at start (если превью уже загружено — применим)
+// apply active skin if preview loaded
 (function initSkin() {
   const skin = skins.find(s => s.id === activeSkin);
   if (skin && skin.preview && skin.preview.__loaded) playerImg.src = skin.preview.src;
 })();
 
-// helper: current player image (fallback to base)
-function getActivePlayerImage() {
+function getActivePlayerImage(){
   const skin = skins.find(s => s.id === activeSkin);
   if (skin && skin.preview && (skin.preview.__loaded || (skin.preview.complete && skin.preview.naturalWidth))) return skin.preview;
   return playerImg;
@@ -184,54 +174,33 @@ let audioUnlocked = false;
 function unlockAudioAndMaybePlayMenu(){
   if (audioUnlocked) return;
   audioUnlocked = true;
-  // prime audio
   [...musicList, laserSound, gameOverSound, recordSound].forEach(a=>{
     a.play().then(()=>a.pause()).catch(()=>{});
     a.currentTime = 0;
   });
-  try {
-    if (state === MENU) {
-      musicList.forEach(m=>m.pause());
-      musicList[musicIndex].currentTime = 0;
-      musicList[musicIndex].play().catch(()=>{});
-    }
-  } catch(e){}
+  try { if (state === MENU) { musicList.forEach(m=>m.pause()); musicList[musicIndex].currentTime = 0; musicList[musicIndex].play().catch(()=>{}); } } catch(e){}
 }
 
 // ===== INPUT =====
-// prevent Safari iOS from scrolling/pinch-zoom while touching canvas
-canvas.addEventListener("touchstart", e => { try{ e.preventDefault(); } catch(e){} }, { passive:false });
-canvas.addEventListener("touchmove", e => { try{ e.preventDefault(); } catch(e){} }, { passive:false });
-
-// also support mouse/pointer for desktop testing without changing behavior
-canvas.addEventListener("pointerdown", e => {
-  if (e.pointerType === 'mouse') {
-    // treat as touchstart for desktop
-    const rect = canvas.getBoundingClientRect();
-    touchX = e.clientX - rect.left;
-    // unlock audio if needed
-    unlockAudioAndMaybePlayMenu();
-    // emulate the existing touch logic by dispatching a synthetic touchstart-like path
-    // We'll reuse same handler logic by creating a fake event object with touches
-    const fake = { touches:[{clientX:e.clientX, clientY:e.clientY}] };
-    handleTouchStart(fake);
-  }
-}, { passive: true });
-
 let touchX = null;
-function getTouchPosFromTouches(touches){
+function getTouchPos(e){
   const rect = canvas.getBoundingClientRect();
-  const x = touches[0].clientX - rect.left;
-  const y = touches[0].clientY - rect.top;
+  const x = e.touches[0].clientX - rect.left;
+  const y = e.touches[0].clientY - rect.top;
   return { x, y };
 }
 
-function handleTouchStart(e) {
-  const pos = getTouchPosFromTouches(e.touches);
+// prevent default scrolling on canvas touch
+canvas.addEventListener("touchstart", e => { try{ e.preventDefault(); } catch(e){} }, { passive:false });
+canvas.addEventListener("touchmove", e => { try{ e.preventDefault(); } catch(e){} }, { passive:false });
+
+canvas.addEventListener("touchstart", e => {
+  unlockAudioAndMaybePlayMenu();
+  const pos = getTouchPos(e);
   const x = pos.x, y = pos.y;
   touchX = x;
 
-  // pause button (logical coords)
+  // pause button
   if (state === GAME) {
     if (x > lw - 50 && y < 50) { state = PAUSE; try { musicList[musicIndex].pause(); } catch(e){}; return; }
   }
@@ -272,7 +241,6 @@ function handleTouchStart(e) {
         if (ownedSkins.includes(s.id)) {
           activeSkin = s.id;
           localStorage.setItem("activeSkin", activeSkin);
-          // immediately apply sprite so player in-game shows selected skin
           if (s.preview && s.preview.src) playerImg.src = s.preview.src;
         }
       }
@@ -283,14 +251,41 @@ function handleTouchStart(e) {
 
   if (state === PAUSE) { state = GAME; try { musicList[musicIndex].play(); } catch(e){}; return; }
   if (state === GAME_OVER) { state = MENU; try { musicList[musicIndex].play(); } catch(e){}; return; }
-}
+});
 
-canvas.addEventListener("touchstart", (e) => { unlockAudioAndMaybePlayMenu(); handleTouchStart(e); }, { passive:false });
 canvas.addEventListener("touchmove", e => {
   const rect = canvas.getBoundingClientRect();
   touchX = e.touches[0].clientX - rect.left;
-}, { passive:true });
-canvas.addEventListener("touchend", ()=>touchX=null, { passive:true });
+});
+canvas.addEventListener("touchend", ()=>touchX=null);
+
+// also allow pointer for desktop testing
+canvas.addEventListener("pointerdown", e => {
+  if (e.pointerType === 'mouse') {
+    // emulate touchstart
+    unlockAudioAndMaybePlayMenu();
+    const rect = canvas.getBoundingClientRect();
+    touchX = e.clientX - rect.left;
+    const fake = { touches:[{clientX: e.clientX, clientY: e.clientY}] };
+    // reuse same logic
+    const pos = { x: fake.touches[0].clientX - rect.left, y: fake.touches[0].clientY - rect.top };
+    // small inline version of touchstart handler for pointer
+    const x = pos.x, y = pos.y;
+    // pause
+    if (state === GAME) {
+      if (x > lw - 50 && y < 50) { state = PAUSE; try { musicList[musicIndex].pause(); } catch(e){}; return; }
+    }
+    if (state === MENU) {
+      const btnH = lw * 0.08;
+      const startCY = lh * 0.48;
+      const settingsCY = lh * 0.56;
+      const shopCY = lh * 0.64;
+      if (y > startCY - btnH/2 && y < startCY + btnH/2) { startGame(); return; }
+      if (y > settingsCY - btnH/2 && y < settingsCY + btnH/2) { state = SETTINGS; try { musicList[musicIndex].pause(); } catch(e){}; return; }
+      if (y > shopCY - btnH/2 && y < shopCY + btnH/2) { state = SHOP; try { musicList[musicIndex].pause(); } catch(e){}; return; }
+    }
+  }
+}, { passive: true });
 
 // ===== START GAME =====
 function startGame(){
@@ -303,8 +298,8 @@ function startGame(){
 
 // ===== DRAW HELPERS =====
 function drawStars(){
-  // iterate local ref for speed
-  for (let i=0, n=stars.length; i<n; i++) {
+  ctx.fillStyle = "white";
+  for (let i = 0; i < stars.length; i++) {
     const s = stars[i];
     s.y += s.v;
     if (s.y > 1) s.y = 0;
@@ -326,10 +321,9 @@ function fireBurst(){
 }
 
 // ===== UPDATE LOOP =====
-// use logical size (lw,lh) for drawing to avoid scaling artifacts
 function update(){
+  // clear using logical size (lw, lh) to avoid scaling artifacts
   ctx.clearRect(0,0,lw,lh);
-  ctx.fillStyle = "white";
   drawStars();
 
   if (state === MENU){
@@ -357,18 +351,15 @@ function update(){
     ctx.fillStyle = "white"; ctx.font = "16px sans-serif"; ctx.textAlign = "center";
     ctx.fillText("COINS: " + coins, lw/2, lh*0.16);
 
-    // Cache repeated values in local vars for performance
-    const lw06 = lw*0.06, lw88 = lw*0.88, imgXbase = lw*0.08, maxImgW = Math.min(120, lw*0.26), maxImgH = Math.min(80, 90);
-    for (let i=0; i<skins.length; i++){
-      const s = skins[i];
+    skins.forEach((s,i) => {
       const y = lh*0.28 + i*100;
       ctx.fillStyle = "rgba(255,255,255,0.03)";
-      ctx.fillRect(lw06, y-50, lw88, 100);
-      const imgX = imgXbase; const imgY = y-40; const imgW = maxImgW; const imgH = maxImgH;
+      ctx.fillRect(lw*0.06, y-50, lw*0.88, 100);
+      const imgX = lw*0.08; const imgY = y-40; const imgW = Math.min(120, lw*0.26); const imgH = Math.min(80, 90);
 
-      // reliable check: __loaded OR complete+naturalWidth
-      const isReady = s.preview && (s.preview.__loaded || (s.preview.complete && s.preview.naturalWidth && s.preview.naturalWidth > 0));
-      if (isReady) {
+      // рисуем превью только если изображение действительно загружено
+      const ready = s.preview && (s.preview.__loaded || (s.preview.complete && s.preview.naturalWidth));
+      if (ready) {
         try {
           ctx.drawImage(s.preview, imgX, imgY, imgW, imgH);
         } catch(e) {
@@ -388,8 +379,8 @@ function update(){
       ctx.fillText(priceText, labelX, y + 18);
       ctx.font = "12px sans-serif"; ctx.fillStyle = s.color || "#aaa";
       ctx.fillText(s.id === activeSkin ? "SELECTED" : (ownedSkins.includes(s.id) ? "OWNED" : "BUY"), labelX + 160, y - 6);
-      if (activeSkin === s.id) { ctx.strokeStyle = "#00ff88"; ctx.lineWidth = 2; ctx.strokeRect(lw06 + 2, y-50 + 2, lw88 - 4, 100 - 4); }
-    }
+      if (activeSkin === s.id) { ctx.strokeStyle = "#00ff88"; ctx.lineWidth = 2; ctx.strokeRect(lw*0.06 + 2, y-50 + 2, lw*0.88 - 4, 100 - 4); }
+    });
 
     ctx.fillStyle = "white"; ctx.font = "16px sans-serif"; ctx.textAlign = "center";
     ctx.fillText("BACK", lw/2, lh*0.92);
@@ -406,15 +397,12 @@ function update(){
 
     if (Date.now() - lastShot > 650) { fireBurst(); lastShot = Date.now(); }
 
-    // move bullets
-    for (let i=0;i<bullets.length;i++) bullets[i].y -= 8;
+    bullets.forEach(b => b.y -= 8);
     bullets = bullets.filter(b => b.y > -20);
 
-    // spawn enemies
     if (Math.random() < 0.02) enemies.push({ x: Math.random() * (lw - 48), y: -50 });
-    for (let i=0;i<enemies.length;i++) enemies[i].y += 3;
+    enemies.forEach(e => e.y += 3);
 
-    // collisions (iterate backwards is slightly faster here in JS engines for splice)
     for (let i = enemies.length - 1; i >= 0; i--){
       const e = enemies[i];
       if (e.y > lh) { endGame(); return; }
@@ -430,12 +418,10 @@ function update(){
     const playerSprite = getActivePlayerImage();
     try { ctx.drawImage(playerSprite, player.x, player.y, player.w, player.h); } catch(e){ ctx.fillStyle = "white"; ctx.fillRect(player.x, player.y, player.w, player.h); }
 
-    ctx.fillStyle = "white";
-    for (let i=0;i<bullets.length;i++){ const b=bullets[i]; ctx.fillRect(b.x, b.y, 4, 10); }
-    for (let i=0;i<enemies.length;i++){
-      const e = enemies[i];
+    bullets.forEach(b => ctx.fillRect(b.x, b.y, 4, 10));
+    enemies.forEach(e => {
       try { ctx.drawImage(enemyImg, e.x, e.y, 48, 48); } catch(e){ ctx.fillStyle = "red"; ctx.fillRect(e.x, e.y, 48, 48); }
-    }
+    });
 
     ctx.font = "16px sans-serif"; ctx.textAlign = "left"; ctx.fillStyle = "white";
     ctx.fillText("Score: " + score, 12, 22);
@@ -469,36 +455,23 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// ===== Adaptive FPS controller =====
-let lastFrameTime = 0;
-let frameTimes = [];
-let TARGET_FPS = 60; // start at 60 for consistency on mobile
-let FRAME_TIME = 1000 / TARGET_FPS;
-
-function adaptFPS(elapsed){
-  frameTimes.push(elapsed);
-  if (frameTimes.length > 30) frameTimes.shift();
-  const avg = frameTimes.reduce((a,b)=>a+b,0)/frameTimes.length;
-  // adapt thresholds conservatively to avoid changing gameplay noticeably
-  if (avg > 22 && TARGET_FPS > 45) { TARGET_FPS = 45; FRAME_TIME = 1000 / TARGET_FPS; }
-  else if (avg > 33 && TARGET_FPS > 30) { TARGET_FPS = 30; FRAME_TIME = 1000 / TARGET_FPS; }
-  else if (avg < 14 && TARGET_FPS < 60) { TARGET_FPS = 60; FRAME_TIME = 1000 / TARGET_FPS; }
-}
+// safety: global error logging to avoid silent failure
+window.addEventListener('error', (ev) => {
+  console.error('Game error:', ev.error || ev.message);
+});
 
 // ===== main loop =====
-(function loop(time){
-  if (document.hidden) { requestAnimationFrame(loop); return; }
-  if (!lastFrameTime) lastFrameTime = time;
-  const elapsed = time - lastFrameTime;
-  if (elapsed >= FRAME_TIME) {
+(function loop(){
+  try {
     update();
-    adaptFPS(elapsed);
-    lastFrameTime = time - (elapsed % FRAME_TIME);
+  } catch (err) {
+    // log but keep loop alive so page doesn't go black permanently
+    console.error('Update error (caught):', err);
   }
   requestAnimationFrame(loop);
 })();
 
-// ensure menu music plays (keeps original logic)
+// ensure menu music plays
 (function ensureMenuMusic(){
   if (state === MENU && audioUnlocked) {
     try { if (musicList[musicIndex].paused) { musicList.forEach(m=>m.pause()); musicList[musicIndex].currentTime = 0; musicList[musicIndex].play().catch(()=>{}); } } catch(e){}
@@ -506,14 +479,8 @@ function adaptFPS(elapsed){
   requestAnimationFrame(ensureMenuMusic);
 })();
 
-// debug
-window.__gameDebug = {
-  coins: ()=>coins,
-  addCoins: (n=1)=>{ coins+=n; localStorage.setItem("coins",coins); },
-  setState: s=>{ state=s; },
-  setTargetFPS: f=>{ TARGET_FPS = f; FRAME_TIME = 1000/TARGET_FPS; frameTimes = []; }
-};
+// debug hooks
+window.__gameDebug = { coins: ()=>coins, addCoins: (n=1)=>{ coins+=n; localStorage.setItem("coins",coins); }, setState: s=>{ state=s; } };
 </script>
 </body>
 </html>
-
