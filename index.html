@@ -48,6 +48,17 @@ let lw = 0, lh = 0; // logical width/height in CSS pixels
 
 const isiOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
+// Adaptive star count based on device class
+function computeStarCount() {
+  // lower for small screens & iOS to save CPU
+  if (isiOS) return 140;
+  const area = window.innerWidth * window.innerHeight;
+  if (area < 360000) return 180;
+  return 300;
+}
+
+let STAR_COUNT = computeStarCount();
+
 function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 2);
   const ratio = 9/16;
@@ -59,7 +70,7 @@ function resize() {
     width = Math.round(h * ratio);
   } else {
     width = w;
-    height = Math.round(w / ratio);
+    height = Math.round(w * ratio);
   }
   // CSS size (logical)
   canvas.style.width = width + "px";
@@ -71,6 +82,10 @@ function resize() {
   canvas.height = Math.round(height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if ('imageSmoothingEnabled' in ctx) ctx.imageSmoothingEnabled = false;
+
+  // recompute star count for this resolution
+  STAR_COUNT = computeStarCount();
+  initStars();
 }
 window.addEventListener("resize", resize);
 resize();
@@ -127,8 +142,17 @@ let score = 0;
 let lastShot = 0;
 
 // ===== STARS =====
-const STAR_COUNT = isiOS ? 140 : 300;
-const stars = Array.from({ length: STAR_COUNT }, () => ({ x: Math.random(), y: Math.random(), s: Math.random()*2+1 }));
+// Use a lighter-weight star structure and init on resize
+let stars = [];
+function initStars() {
+  stars = Array.from({ length: STAR_COUNT }, () => ({
+    x: Math.random(),
+    y: Math.random(),
+    s: Math.random()*2+1,
+    v: (Math.random()*0.6 + 0.4) / 600 // velocity factor similar to original s/600 but precomputed
+  }));
+}
+initStars();
 
 // ===== SKINS =====
 // Rare получает preview: skinImg6
@@ -179,17 +203,31 @@ function unlockAudioAndMaybePlayMenu(){
 canvas.addEventListener("touchstart", e => { try{ e.preventDefault(); } catch(e){} }, { passive:false });
 canvas.addEventListener("touchmove", e => { try{ e.preventDefault(); } catch(e){} }, { passive:false });
 
+// also support mouse/pointer for desktop testing without changing behavior
+canvas.addEventListener("pointerdown", e => {
+  if (e.pointerType === 'mouse') {
+    // treat as touchstart for desktop
+    const rect = canvas.getBoundingClientRect();
+    touchX = e.clientX - rect.left;
+    // unlock audio if needed
+    unlockAudioAndMaybePlayMenu();
+    // emulate the existing touch logic by dispatching a synthetic touchstart-like path
+    // We'll reuse same handler logic by creating a fake event object with touches
+    const fake = { touches:[{clientX:e.clientX, clientY:e.clientY}] };
+    handleTouchStart(fake);
+  }
+}, { passive: true });
+
 let touchX = null;
-function getTouchPos(e){
+function getTouchPosFromTouches(touches){
   const rect = canvas.getBoundingClientRect();
-  const x = e.touches[0].clientX - rect.left;
-  const y = e.touches[0].clientY - rect.top;
+  const x = touches[0].clientX - rect.left;
+  const y = touches[0].clientY - rect.top;
   return { x, y };
 }
 
-canvas.addEventListener("touchstart", e => {
-  unlockAudioAndMaybePlayMenu();
-  const pos = getTouchPos(e);
+function handleTouchStart(e) {
+  const pos = getTouchPosFromTouches(e.touches);
   const x = pos.x, y = pos.y;
   touchX = x;
 
@@ -245,13 +283,14 @@ canvas.addEventListener("touchstart", e => {
 
   if (state === PAUSE) { state = GAME; try { musicList[musicIndex].play(); } catch(e){}; return; }
   if (state === GAME_OVER) { state = MENU; try { musicList[musicIndex].play(); } catch(e){}; return; }
-});
+}
 
+canvas.addEventListener("touchstart", (e) => { unlockAudioAndMaybePlayMenu(); handleTouchStart(e); }, { passive:false });
 canvas.addEventListener("touchmove", e => {
   const rect = canvas.getBoundingClientRect();
   touchX = e.touches[0].clientX - rect.left;
-});
-canvas.addEventListener("touchend", ()=>touchX=null);
+}, { passive:true });
+canvas.addEventListener("touchend", ()=>touchX=null, { passive:true });
 
 // ===== START GAME =====
 function startGame(){
@@ -264,9 +303,10 @@ function startGame(){
 
 // ===== DRAW HELPERS =====
 function drawStars(){
-  ctx.fillStyle = "white";
-  for (let s of stars) {
-    s.y += s.s / 600;
+  // iterate local ref for speed
+  for (let i=0, n=stars.length; i<n; i++) {
+    const s = stars[i];
+    s.y += s.v;
     if (s.y > 1) s.y = 0;
     ctx.fillRect(s.x*lw, s.y*lh, s.s, s.s);
   }
@@ -289,6 +329,7 @@ function fireBurst(){
 // use logical size (lw,lh) for drawing to avoid scaling artifacts
 function update(){
   ctx.clearRect(0,0,lw,lh);
+  ctx.fillStyle = "white";
   drawStars();
 
   if (state === MENU){
@@ -316,11 +357,14 @@ function update(){
     ctx.fillStyle = "white"; ctx.font = "16px sans-serif"; ctx.textAlign = "center";
     ctx.fillText("COINS: " + coins, lw/2, lh*0.16);
 
-    skins.forEach((s,i) => {
+    // Cache repeated values in local vars for performance
+    const lw06 = lw*0.06, lw88 = lw*0.88, imgXbase = lw*0.08, maxImgW = Math.min(120, lw*0.26), maxImgH = Math.min(80, 90);
+    for (let i=0; i<skins.length; i++){
+      const s = skins[i];
       const y = lh*0.28 + i*100;
       ctx.fillStyle = "rgba(255,255,255,0.03)";
-      ctx.fillRect(lw*0.06, y-50, lw*0.88, 100);
-      const imgX = lw*0.08; const imgY = y-40; const imgW = Math.min(120, lw*0.26); const imgH = Math.min(80, 90);
+      ctx.fillRect(lw06, y-50, lw88, 100);
+      const imgX = imgXbase; const imgY = y-40; const imgW = maxImgW; const imgH = maxImgH;
 
       // reliable check: __loaded OR complete+naturalWidth
       const isReady = s.preview && (s.preview.__loaded || (s.preview.complete && s.preview.naturalWidth && s.preview.naturalWidth > 0));
@@ -344,8 +388,8 @@ function update(){
       ctx.fillText(priceText, labelX, y + 18);
       ctx.font = "12px sans-serif"; ctx.fillStyle = s.color || "#aaa";
       ctx.fillText(s.id === activeSkin ? "SELECTED" : (ownedSkins.includes(s.id) ? "OWNED" : "BUY"), labelX + 160, y - 6);
-      if (activeSkin === s.id) { ctx.strokeStyle = "#00ff88"; ctx.lineWidth = 2; ctx.strokeRect(lw*0.06 + 2, y-50 + 2, lw*0.88 - 4, 100 - 4); }
-    });
+      if (activeSkin === s.id) { ctx.strokeStyle = "#00ff88"; ctx.lineWidth = 2; ctx.strokeRect(lw06 + 2, y-50 + 2, lw88 - 4, 100 - 4); }
+    }
 
     ctx.fillStyle = "white"; ctx.font = "16px sans-serif"; ctx.textAlign = "center";
     ctx.fillText("BACK", lw/2, lh*0.92);
@@ -362,12 +406,15 @@ function update(){
 
     if (Date.now() - lastShot > 650) { fireBurst(); lastShot = Date.now(); }
 
-    bullets.forEach(b => b.y -= 8);
+    // move bullets
+    for (let i=0;i<bullets.length;i++) bullets[i].y -= 8;
     bullets = bullets.filter(b => b.y > -20);
 
+    // spawn enemies
     if (Math.random() < 0.02) enemies.push({ x: Math.random() * (lw - 48), y: -50 });
-    enemies.forEach(e => e.y += 3);
+    for (let i=0;i<enemies.length;i++) enemies[i].y += 3;
 
+    // collisions (iterate backwards is slightly faster here in JS engines for splice)
     for (let i = enemies.length - 1; i >= 0; i--){
       const e = enemies[i];
       if (e.y > lh) { endGame(); return; }
@@ -383,10 +430,12 @@ function update(){
     const playerSprite = getActivePlayerImage();
     try { ctx.drawImage(playerSprite, player.x, player.y, player.w, player.h); } catch(e){ ctx.fillStyle = "white"; ctx.fillRect(player.x, player.y, player.w, player.h); }
 
-    bullets.forEach(b => ctx.fillRect(b.x, b.y, 4, 10));
-    enemies.forEach(e => {
+    ctx.fillStyle = "white";
+    for (let i=0;i<bullets.length;i++){ const b=bullets[i]; ctx.fillRect(b.x, b.y, 4, 10); }
+    for (let i=0;i<enemies.length;i++){
+      const e = enemies[i];
       try { ctx.drawImage(enemyImg, e.x, e.y, 48, 48); } catch(e){ ctx.fillStyle = "red"; ctx.fillRect(e.x, e.y, 48, 48); }
-    });
+    }
 
     ctx.font = "16px sans-serif"; ctx.textAlign = "left"; ctx.fillStyle = "white";
     ctx.fillText("Score: " + score, 12, 22);
@@ -420,10 +469,21 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// ===== FPS STABILIZER =====
+// ===== Adaptive FPS controller =====
 let lastFrameTime = 0;
-const TARGET_FPS = isiOS ? 60 : 120;
-const FRAME_TIME = 1000 / TARGET_FPS;
+let frameTimes = [];
+let TARGET_FPS = 60; // start at 60 for consistency on mobile
+let FRAME_TIME = 1000 / TARGET_FPS;
+
+function adaptFPS(elapsed){
+  frameTimes.push(elapsed);
+  if (frameTimes.length > 30) frameTimes.shift();
+  const avg = frameTimes.reduce((a,b)=>a+b,0)/frameTimes.length;
+  // adapt thresholds conservatively to avoid changing gameplay noticeably
+  if (avg > 22 && TARGET_FPS > 45) { TARGET_FPS = 45; FRAME_TIME = 1000 / TARGET_FPS; }
+  else if (avg > 33 && TARGET_FPS > 30) { TARGET_FPS = 30; FRAME_TIME = 1000 / TARGET_FPS; }
+  else if (avg < 14 && TARGET_FPS < 60) { TARGET_FPS = 60; FRAME_TIME = 1000 / TARGET_FPS; }
+}
 
 // ===== main loop =====
 (function loop(time){
@@ -432,6 +492,7 @@ const FRAME_TIME = 1000 / TARGET_FPS;
   const elapsed = time - lastFrameTime;
   if (elapsed >= FRAME_TIME) {
     update();
+    adaptFPS(elapsed);
     lastFrameTime = time - (elapsed % FRAME_TIME);
   }
   requestAnimationFrame(loop);
@@ -446,7 +507,13 @@ const FRAME_TIME = 1000 / TARGET_FPS;
 })();
 
 // debug
-window.__gameDebug = { coins: ()=>coins, addCoins: (n=1)=>{ coins+=n; localStorage.setItem("coins",coins); }, setState: s=>{ state=s; } };
+window.__gameDebug = {
+  coins: ()=>coins,
+  addCoins: (n=1)=>{ coins+=n; localStorage.setItem("coins",coins); },
+  setState: s=>{ state=s; },
+  setTargetFPS: f=>{ TARGET_FPS = f; FRAME_TIME = 1000/TARGET_FPS; frameTimes = []; }
+};
 </script>
 </body>
 </html>
+
