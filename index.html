@@ -82,6 +82,7 @@ const skinImg1 = new Image(); skinImg1.src = "skin1.png";
 const skinImg2 = new Image(); skinImg2.src = "skin2.png";
 const skinImg3 = new Image(); skinImg3.src = "skin3.png";
 const skinImg4 = new Image(); skinImg4.src = "skin4.png";
+const skinImg6 = new Image(); skinImg6.src = "skin6.png"; // added skin6 for Rare
 
 // ===== AUDIO =====
 const musicList = [ new Audio("music1.mp3"), new Audio("music2.mp3"), new Audio("music3.mp3") ];
@@ -114,7 +115,7 @@ const stars = Array.from({ length: STAR_COUNT }, () => ({ x: Math.random(), y: M
 // ===== SKINS =====
 // removed blue placeholder for Rare (color null)
 const skins = [
-  {id:0,name:"Rare",cost:100,color:null, preview:null},
+  {id:0,name:"Rare",cost:100,color:null, preview:skinImg6},
   {id:1,name:"Epic",cost:200,color:"purple", preview:skinImg1},
   {id:2,name:"Mythical",cost:300,color:"red", preview:skinImg2},
   {id:3,name:"Legendary",cost:400,color:"yellow", preview:skinImg3},
@@ -290,7 +291,8 @@ function update(){
       ctx.fillStyle = "rgba(255,255,255,0.03)";
       ctx.fillRect(lw*0.06, y-50, lw*0.88, 100);
       const imgX = lw*0.08; const imgY = y-40; const imgW = Math.min(120, lw*0.26); const imgH = Math.min(80, 90);
-      if (s.preview && s.preview.complete && s.id !== 0) {
+      // allow drawing preview for Rare (id 0) as well
+      if (s.preview && s.preview.complete) {
         try { ctx.drawImage(s.preview, imgX, imgY, imgW, imgH); } catch(e){ ctx.fillStyle = s.color || "#aaa"; ctx.fillRect(imgX,imgY,imgW,imgH); }
       } else { ctx.fillStyle = s.color || "#777"; ctx.fillRect(imgX,imgY,imgW,imgH); }
       ctx.fillStyle = "white"; ctx.font = "18px sans-serif"; ctx.textAlign = "left";
