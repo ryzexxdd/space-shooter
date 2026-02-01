@@ -82,7 +82,14 @@ const skinImg1 = new Image(); skinImg1.src = "skin1.png";
 const skinImg2 = new Image(); skinImg2.src = "skin2.png";
 const skinImg3 = new Image(); skinImg3.src = "skin3.png";
 const skinImg4 = new Image(); skinImg4.src = "skin4.png";
-const skinImg6 = new Image(); skinImg6.src = "skin6.png"; // added skin6 for Rare
+const skinImg6 = new Image(); skinImg6.src = "skin6.png"; // ваш файл skin6.png
+
+// пометка загрузки для всех изображений (надёжная проверка)
+[playerImg, enemyImg, skinImg1, skinImg2, skinImg3, skinImg4, skinImg6].forEach(img=>{
+  img.__loaded = false;
+  img.onload = ()=> { img.__loaded = true; };
+  img.onerror = ()=> { img.__loaded = false; };
+});
 
 // ===== AUDIO =====
 const musicList = [ new Audio("music1.mp3"), new Audio("music2.mp3"), new Audio("music3.mp3") ];
@@ -113,7 +120,7 @@ const STAR_COUNT = isiOS ? 140 : 300;
 const stars = Array.from({ length: STAR_COUNT }, () => ({ x: Math.random(), y: Math.random(), s: Math.random()*2+1 }));
 
 // ===== SKINS =====
-// removed blue placeholder for Rare (color null)
+// Rare получает preview: skinImg6
 const skins = [
   {id:0,name:"Rare",cost:100,color:null, preview:skinImg6},
   {id:1,name:"Epic",cost:200,color:"purple", preview:skinImg1},
@@ -124,16 +131,16 @@ const skins = [
 let ownedSkins = JSON.parse(localStorage.getItem("ownedSkins")||"[0]");
 let activeSkin = Number(localStorage.getItem("activeSkin")||0);
 
-// ensure player sprite uses active skin at start
+// ensure player sprite uses active skin at start (если превью уже загружено — применим)
 (function initSkin() {
   const skin = skins.find(s => s.id === activeSkin);
-  if (skin && skin.preview && skin.preview.src) playerImg.src = skin.preview.src;
+  if (skin && skin.preview && skin.preview.__loaded) playerImg.src = skin.preview.src;
 })();
 
 // helper: current player image (fallback to base)
 function getActivePlayerImage() {
   const skin = skins.find(s => s.id === activeSkin);
-  if (skin && skin.preview && skin.preview.complete && skin.preview.naturalWidth) return skin.preview;
+  if (skin && skin.preview && (skin.preview.__loaded || (skin.preview.complete && skin.preview.naturalWidth))) return skin.preview;
   return playerImg;
 }
 
@@ -258,7 +265,8 @@ function fireBurst(){
 
 // ===== UPDATE LOOP =====
 function update(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // clear using logical size (lw, lh) to avoid scaling artifacts
+  ctx.clearRect(0,0,lw,lh);
   drawStars();
 
   if (state === MENU){
@@ -291,10 +299,21 @@ function update(){
       ctx.fillStyle = "rgba(255,255,255,0.03)";
       ctx.fillRect(lw*0.06, y-50, lw*0.88, 100);
       const imgX = lw*0.08; const imgY = y-40; const imgW = Math.min(120, lw*0.26); const imgH = Math.min(80, 90);
-      // allow drawing preview for Rare (id 0) as well
-      if (s.preview && s.preview.complete) {
-        try { ctx.drawImage(s.preview, imgX, imgY, imgW, imgH); } catch(e){ ctx.fillStyle = s.color || "#aaa"; ctx.fillRect(imgX,imgY,imgW,imgH); }
-      } else { ctx.fillStyle = s.color || "#777"; ctx.fillRect(imgX,imgY,imgW,imgH); }
+
+      // рисуем превью только если изображение действительно загружено
+      if (s.preview && (s.preview.__loaded || (s.preview.complete && s.preview.naturalWidth))) {
+        try {
+          ctx.drawImage(s.preview, imgX, imgY, imgW, imgH);
+        } catch(e) {
+          ctx.fillStyle = s.color || "#aaa";
+          ctx.fillRect(imgX,imgY,imgW,imgH);
+        }
+      } else {
+        // fallback: цветной прямоугольник если превью еще не загружено
+        ctx.fillStyle = s.color || "#777";
+        ctx.fillRect(imgX,imgY,imgW,imgH);
+      }
+
       ctx.fillStyle = "white"; ctx.font = "18px sans-serif"; ctx.textAlign = "left";
       const labelX = imgX + imgW + 18;
       ctx.fillText(s.name, labelX, y - 6);
@@ -383,3 +402,5 @@ window.__gameDebug = { coins: ()=>coins, addCoins: (n=1)=>{ coins+=n; localStora
 </script>
 </body>
 </html>
+
+
