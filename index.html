@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+=<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
@@ -29,7 +29,7 @@ html, body {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
-canvas { display:block; margin:0 auto; touch-action: none; -webkit-tap-highlight-color: transparent; }
+canvas { display:block; margin:0 auto; }
 </style>
 </head>
 <body>
@@ -40,22 +40,10 @@ canvas { display:block; margin:0 auto; touch-action: none; -webkit-tap-highlight
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-// try to keep pixel art crisp
-try { if ('imageSmoothingEnabled' in ctx) ctx.imageSmoothingEnabled = false; } catch(e){}
-
 let dpr = Math.min(window.devicePixelRatio || 1, 2);
 let lw = 0, lh = 0; // logical width/height in CSS pixels
 
 const isiOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-// compute star count conservatively
-function computeStarCount() {
-  if (isiOS) return 140;
-  const area = window.innerWidth * window.innerHeight;
-  if (area < 360000) return 180;
-  return 300;
-}
-let STAR_COUNT = computeStarCount();
 
 function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -68,7 +56,7 @@ function resize() {
     width = Math.round(h * ratio);
   } else {
     width = w;
-    height = Math.round(w * ratio);
+    height = Math.round(w / ratio);
   }
   // CSS size (logical)
   canvas.style.width = width + "px";
@@ -79,10 +67,6 @@ function resize() {
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  try { if ('imageSmoothingEnabled' in ctx) ctx.imageSmoothingEnabled = false; } catch(e){}
-  // recompute star count if needed
-  STAR_COUNT = computeStarCount();
-  initStars();
 }
 window.addEventListener("resize", resize);
 resize();
@@ -92,24 +76,20 @@ const MENU = 0, SETTINGS = 1, GAME = 2, PAUSE = 3, GAME_OVER = 4, SHOP = 5;
 let state = MENU;
 
 // ===== ASSETS =====
-function makeImg(src){
-  const img = new Image();
-  img.__loaded = false;
-  img.src = src;
-  img.onload = ()=>{ img.__loaded = true; };
-  img.onerror = ()=>{ img.__loaded = false; console.warn('img load failed', src); };
-  // try decode for modern browsers
-  if (img.decode) img.decode().then(()=>img.__loaded = true).catch(()=>{});
-  return img;
-}
+const playerImg = new Image(); playerImg.src = "player.png";
+const enemyImg  = new Image(); enemyImg.src  = "enemy.png";
+const skinImg1 = new Image(); skinImg1.src = "skin1.png";
+const skinImg2 = new Image(); skinImg2.src = "skin2.png";
+const skinImg3 = new Image(); skinImg3.src = "skin3.png";
+const skinImg4 = new Image(); skinImg4.src = "skin4.png";
+const skinImg6 = new Image(); skinImg6.src = "skin6.png"; // ваш файл skin6.png
 
-const playerImg = makeImg("player.png");
-const enemyImg  = makeImg("enemy.png");
-const skinImg1 = makeImg("skin1.png");
-const skinImg2 = makeImg("skin2.png");
-const skinImg3 = makeImg("skin3.png");
-const skinImg4 = makeImg("skin4.png");
-const skinImg6 = makeImg("skin6.png");
+// пометка загрузки для всех изображений (надёжная проверка)
+[playerImg, enemyImg, skinImg1, skinImg2, skinImg3, skinImg4, skinImg6].forEach(img=>{
+  img.__loaded = false;
+  img.onload = ()=> { img.__loaded = true; };
+  img.onerror = ()=> { img.__loaded = false; };
+});
 
 // ===== AUDIO =====
 const musicList = [ new Audio("music1.mp3"), new Audio("music2.mp3"), new Audio("music3.mp3") ];
@@ -136,17 +116,11 @@ let score = 0;
 let lastShot = 0;
 
 // ===== STARS =====
-let stars = [];
-function initStars(){
-  // lightweight precomputed velocities
-  stars = Array.from({ length: STAR_COUNT }, () => {
-    const s = Math.random()*2+1;
-    return { x: Math.random(), y: Math.random(), s: s, v: s/600 };
-  });
-}
-initStars();
+const STAR_COUNT = isiOS ? 140 : 300;
+const stars = Array.from({ length: STAR_COUNT }, () => ({ x: Math.random(), y: Math.random(), s: Math.random()*2+1 }));
 
 // ===== SKINS =====
+// Rare получает preview: skinImg6
 const skins = [
   {id:0,name:"Rare",cost:100,color:null, preview:skinImg6},
   {id:1,name:"Epic",cost:200,color:"purple", preview:skinImg1},
@@ -157,13 +131,14 @@ const skins = [
 let ownedSkins = JSON.parse(localStorage.getItem("ownedSkins")||"[0]");
 let activeSkin = Number(localStorage.getItem("activeSkin")||0);
 
-// apply active skin if preview loaded
+// ensure player sprite uses active skin at start (если превью уже загружено — применим)
 (function initSkin() {
   const skin = skins.find(s => s.id === activeSkin);
   if (skin && skin.preview && skin.preview.__loaded) playerImg.src = skin.preview.src;
 })();
 
-function getActivePlayerImage(){
+// helper: current player image (fallback to base)
+function getActivePlayerImage() {
   const skin = skins.find(s => s.id === activeSkin);
   if (skin && skin.preview && (skin.preview.__loaded || (skin.preview.complete && skin.preview.naturalWidth))) return skin.preview;
   return playerImg;
@@ -190,17 +165,13 @@ function getTouchPos(e){
   return { x, y };
 }
 
-// prevent default scrolling on canvas touch
-canvas.addEventListener("touchstart", e => { try{ e.preventDefault(); } catch(e){} }, { passive:false });
-canvas.addEventListener("touchmove", e => { try{ e.preventDefault(); } catch(e){} }, { passive:false });
-
 canvas.addEventListener("touchstart", e => {
   unlockAudioAndMaybePlayMenu();
   const pos = getTouchPos(e);
   const x = pos.x, y = pos.y;
   touchX = x;
 
-  // pause button
+  // pause button (logical coords)
   if (state === GAME) {
     if (x > lw - 50 && y < 50) { state = PAUSE; try { musicList[musicIndex].pause(); } catch(e){}; return; }
   }
@@ -241,6 +212,7 @@ canvas.addEventListener("touchstart", e => {
         if (ownedSkins.includes(s.id)) {
           activeSkin = s.id;
           localStorage.setItem("activeSkin", activeSkin);
+          // immediately apply sprite so player in-game shows selected skin
           if (s.preview && s.preview.src) playerImg.src = s.preview.src;
         }
       }
@@ -259,34 +231,6 @@ canvas.addEventListener("touchmove", e => {
 });
 canvas.addEventListener("touchend", ()=>touchX=null);
 
-// also allow pointer for desktop testing
-canvas.addEventListener("pointerdown", e => {
-  if (e.pointerType === 'mouse') {
-    // emulate touchstart
-    unlockAudioAndMaybePlayMenu();
-    const rect = canvas.getBoundingClientRect();
-    touchX = e.clientX - rect.left;
-    const fake = { touches:[{clientX: e.clientX, clientY: e.clientY}] };
-    // reuse same logic
-    const pos = { x: fake.touches[0].clientX - rect.left, y: fake.touches[0].clientY - rect.top };
-    // small inline version of touchstart handler for pointer
-    const x = pos.x, y = pos.y;
-    // pause
-    if (state === GAME) {
-      if (x > lw - 50 && y < 50) { state = PAUSE; try { musicList[musicIndex].pause(); } catch(e){}; return; }
-    }
-    if (state === MENU) {
-      const btnH = lw * 0.08;
-      const startCY = lh * 0.48;
-      const settingsCY = lh * 0.56;
-      const shopCY = lh * 0.64;
-      if (y > startCY - btnH/2 && y < startCY + btnH/2) { startGame(); return; }
-      if (y > settingsCY - btnH/2 && y < settingsCY + btnH/2) { state = SETTINGS; try { musicList[musicIndex].pause(); } catch(e){}; return; }
-      if (y > shopCY - btnH/2 && y < shopCY + btnH/2) { state = SHOP; try { musicList[musicIndex].pause(); } catch(e){}; return; }
-    }
-  }
-}, { passive: true });
-
 // ===== START GAME =====
 function startGame(){
   player.x = lw/2 - player.w/2;
@@ -299,9 +243,8 @@ function startGame(){
 // ===== DRAW HELPERS =====
 function drawStars(){
   ctx.fillStyle = "white";
-  for (let i = 0; i < stars.length; i++) {
-    const s = stars[i];
-    s.y += s.v;
+  for (let s of stars) {
+    s.y += s.s / 600;
     if (s.y > 1) s.y = 0;
     ctx.fillRect(s.x*lw, s.y*lh, s.s, s.s);
   }
@@ -358,8 +301,7 @@ function update(){
       const imgX = lw*0.08; const imgY = y-40; const imgW = Math.min(120, lw*0.26); const imgH = Math.min(80, 90);
 
       // рисуем превью только если изображение действительно загружено
-      const ready = s.preview && (s.preview.__loaded || (s.preview.complete && s.preview.naturalWidth));
-      if (ready) {
+      if (s.preview && (s.preview.__loaded || (s.preview.complete && s.preview.naturalWidth))) {
         try {
           ctx.drawImage(s.preview, imgX, imgY, imgW, imgH);
         } catch(e) {
@@ -444,32 +386,8 @@ function endGame(){
   state = GAME_OVER;
 }
 
-// ===== Visibility handling (reduce CPU when hidden) =====
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    try { musicList.forEach(m => m.pause()); } catch(e){}
-  } else {
-    if (state === MENU && audioUnlocked) {
-      try { musicList.forEach(m=>m.pause()); musicList[musicIndex].currentTime = 0; musicList[musicIndex].play().catch(()=>{}); } catch(e){}
-    }
-  }
-});
-
-// safety: global error logging to avoid silent failure
-window.addEventListener('error', (ev) => {
-  console.error('Game error:', ev.error || ev.message);
-});
-
 // ===== main loop =====
-(function loop(){
-  try {
-    update();
-  } catch (err) {
-    // log but keep loop alive so page doesn't go black permanently
-    console.error('Update error (caught):', err);
-  }
-  requestAnimationFrame(loop);
-})();
+(function loop(){ update(); requestAnimationFrame(loop); })();
 
 // ensure menu music plays
 (function ensureMenuMusic(){
@@ -479,8 +397,9 @@ window.addEventListener('error', (ev) => {
   requestAnimationFrame(ensureMenuMusic);
 })();
 
-// debug hooks
+// debug
 window.__gameDebug = { coins: ()=>coins, addCoins: (n=1)=>{ coins+=n; localStorage.setItem("coins",coins); }, setState: s=>{ state=s; } };
 </script>
 </body>
 </html>
+
