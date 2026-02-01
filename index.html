@@ -41,7 +41,7 @@ const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
 // make pixel-art crisp
-ctx.imageSmoothingEnabled = false;
+if ('imageSmoothingEnabled' in ctx) ctx.imageSmoothingEnabled = false;
 
 let dpr = Math.min(window.devicePixelRatio || 1, 2);
 let lw = 0, lh = 0; // logical width/height in CSS pixels
@@ -66,12 +66,11 @@ function resize() {
   canvas.style.height = height + "px";
   lw = width;
   lh = height;
-  // backing store
+  // backing store (physical)
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  // restore crisp pixel art after transform
-  ctx.imageSmoothingEnabled = false;
+  if ('imageSmoothingEnabled' in ctx) ctx.imageSmoothingEnabled = false;
 }
 window.addEventListener("resize", resize);
 resize();
@@ -80,21 +79,28 @@ resize();
 const MENU = 0, SETTINGS = 1, GAME = 2, PAUSE = 3, GAME_OVER = 4, SHOP = 5;
 let state = MENU;
 
-// ===== ASSETS =====
-const playerImg = new Image(); playerImg.src = "player.png";
-const enemyImg  = new Image(); enemyImg.src  = "enemy.png";
-const skinImg1 = new Image(); skinImg1.src = "skin1.png";
-const skinImg2 = new Image(); skinImg2.src = "skin2.png";
-const skinImg3 = new Image(); skinImg3.src = "skin3.png";
-const skinImg4 = new Image(); skinImg4.src = "skin4.png";
-const skinImg6 = new Image(); skinImg6.src = "skin6.png"; // ваш файл skin6.png
-
-// пометка загрузки для всех изображений (надёжная проверка)
-[playerImg, enemyImg, skinImg1, skinImg2, skinImg3, skinImg4, skinImg6].forEach(img=>{
+// ===== ASSET LOADER HELPERS =====
+function makeImage(src){
+  const img = new Image();
   img.__loaded = false;
+  img.src = src;
   img.onload = ()=> { img.__loaded = true; };
-  img.onerror = ()=> { img.__loaded = false; };
-});
+  img.onerror = ()=> { img.__loaded = false; console.warn('Image load failed:', src); };
+  // try decode() to mark loaded as soon as ready (modern browsers)
+  if (img.decode) {
+    img.decode().then(()=>{ img.__loaded = true; }).catch(()=>{ /* ignore */ });
+  }
+  return img;
+}
+
+// ===== ASSETS =====
+const playerImg = makeImage("player.png");
+const enemyImg  = makeImage("enemy.png");
+const skinImg1 = makeImage("skin1.png");
+const skinImg2 = makeImage("skin2.png");
+const skinImg3 = makeImage("skin3.png");
+const skinImg4 = makeImage("skin4.png");
+const skinImg6 = makeImage("skin6.png"); // ваш файл skin6.png
 
 // ===== AUDIO =====
 const musicList = [ new Audio("music1.mp3"), new Audio("music2.mp3"), new Audio("music3.mp3") ];
@@ -154,7 +160,7 @@ let audioUnlocked = false;
 function unlockAudioAndMaybePlayMenu(){
   if (audioUnlocked) return;
   audioUnlocked = true;
-  // try to prime audio elements once
+  // prime audio
   [...musicList, laserSound, gameOverSound, recordSound].forEach(a=>{
     a.play().then(()=>a.pause()).catch(()=>{});
     a.currentTime = 0;
@@ -316,8 +322,9 @@ function update(){
       ctx.fillRect(lw*0.06, y-50, lw*0.88, 100);
       const imgX = lw*0.08; const imgY = y-40; const imgW = Math.min(120, lw*0.26); const imgH = Math.min(80, 90);
 
-      // рисуем превью только если изображение действительно загружено
-      if (s.preview && (s.preview.__loaded || (s.preview.complete && s.preview.naturalWidth))) {
+      // reliable check: __loaded OR complete+naturalWidth
+      const isReady = s.preview && (s.preview.__loaded || (s.preview.complete && s.preview.naturalWidth && s.preview.naturalWidth > 0));
+      if (isReady) {
         try {
           ctx.drawImage(s.preview, imgX, imgY, imgW, imgH);
         } catch(e) {
@@ -407,7 +414,6 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     try { musicList.forEach(m => m.pause()); } catch(e){}
   } else {
-    // restore menu music if appropriate
     if (state === MENU && audioUnlocked) {
       try { musicList.forEach(m=>m.pause()); musicList[musicIndex].currentTime = 0; musicList[musicIndex].play().catch(()=>{}); } catch(e){}
     }
@@ -421,17 +427,11 @@ const FRAME_TIME = 1000 / TARGET_FPS;
 
 // ===== main loop =====
 (function loop(time){
-  // if tab is hidden - skip heavy updates
-  if (document.hidden) {
-    requestAnimationFrame(loop);
-    return;
-  }
-
+  if (document.hidden) { requestAnimationFrame(loop); return; }
   if (!lastFrameTime) lastFrameTime = time;
   const elapsed = time - lastFrameTime;
   if (elapsed >= FRAME_TIME) {
     update();
-    // avoid drift
     lastFrameTime = time - (elapsed % FRAME_TIME);
   }
   requestAnimationFrame(loop);
